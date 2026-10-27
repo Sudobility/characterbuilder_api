@@ -1,6 +1,7 @@
 import { and, desc, eq, lt, or } from 'drizzle-orm';
 import {
   makeId,
+  normalizeLegacyHairStyle,
   type Character,
   type CreateCharacterRequest,
   type UpdateCharacterRequest,
@@ -17,7 +18,7 @@ function toCharacter(r: Row): Character {
     name: r.name,
     role: r.role,
     notes: r.notes,
-    spec: r.spec,
+    spec: normalizeLegacyHairStyle(r.spec),
     previewImageId: r.previewImageId,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),

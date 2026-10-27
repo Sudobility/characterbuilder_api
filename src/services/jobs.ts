@@ -25,6 +25,7 @@ import {
   resolveDemographics,
   composePrompt,
   generationParamsSchema,
+  hashSeed,
   makeId,
   type BodySpec,
   type Demographics,
@@ -324,6 +325,8 @@ export async function runJob(id: string): Promise<void> {
       // first-party data — deterministic, no network call.
       const { spec } = castFaceSpec(baseSpec, demographics, {
         conformity: params.conformity,
+        lookBatch: { index: i, seed: hashSeed(id) },
+        ...(params.seed === undefined ? {} : { seed: hashSeed(`${params.seed}:${i}`) }),
       });
       // Enforce completeness BEFORE either compose path, so an incomplete spec
       // (a caster bug) fails the image loudly rather than being quietly rendered
@@ -333,7 +336,7 @@ export async function runJob(id: string): Promise<void> {
       // back to the local deterministic composer if that endpoint is down.
       let prompt: string;
       try {
-        prompt = await composeRemote(spec, params.shot, params.expression);
+        prompt = await composeRemote(spec, params.shot, params.expression, params.artStyle);
       } catch (err) {
         log('warn', '[job] remote compose failed; using local composePrompt', {
           id,

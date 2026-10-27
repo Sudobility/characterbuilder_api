@@ -10,6 +10,7 @@ import {
   HEAD_DIRECTIONS,
   faceDistributionsSchema,
   sanitizeFaceSpec,
+  visualStyleById,
   type BodySpec,
   type Demographics,
   type FaceDistributions,
@@ -348,7 +349,8 @@ export function composeSheetPrompt(
 export async function composeRemote(
   traits: FaceSpec,
   shot?: string,
-  expression?: string
+  expression?: string,
+  artStyle?: string
 ): Promise<string> {
   assertCompleteSpec(traits);
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
@@ -367,7 +369,7 @@ export async function composeRemote(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`,
       },
-      body: JSON.stringify({ traits, shot, expression }),
+      body: JSON.stringify({ traits, shot, expression, artStyle: visualStyleById(artStyle ?? 'naturalistic') }),
       signal: controller.signal,
     });
     const body = (await response.json()) as ShapeShyftBody;

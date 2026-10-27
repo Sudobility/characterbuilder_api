@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { visualStyleGroups } from '@sudobility/characterbuilder_types';
 import { requireAuth } from '../middleware/auth';
 import me from './me';
 import characters from './characters';
@@ -9,6 +10,7 @@ import consumablesBalance, {
 } from './consumables';
 
 const routes = new Hono();
+routes.get('/visual-styles', (c) => c.json({ success: true, data: { groups: visualStyleGroups } }));
 
 // Guard the authenticated prefixes (registered before the routers they protect).
 routes.use('/me', requireAuth);

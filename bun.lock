@@ -7,7 +7,7 @@
       "dependencies": {
         "@hono/zod-validator": "~0.7.6",
         "@sudobility/auth_service": "^1.1.30",
-        "@sudobility/characterbuilder_types": "^0.1.7",
+        "@sudobility/characterbuilder_types": "^0.1.8",
         "@sudobility/consumables_service": "^0.1.17",
         "@sudobility/types": "^1.9.76",
         "drizzle-orm": "~0.45.4",
@@ -125,7 +125,7 @@
 
     "@sudobility/auth_service": ["@sudobility/auth_service@1.1.30", "https://npm.pkg.github.com/download/@sudobility/auth_service/1.1.30/ecd6cc5b9ff82cfbbcc3db42df53142f88736844", { "peerDependencies": { "@sudobility/types": "^1.9.76", "firebase-admin": "^13.0.0" } }, "sha512-/L6isHwryBTTMo7+SpdUFUzWpYfRefEBkCxZEAPiC7fgJVYha2ZmhyYChWQLFcQILcnq7tYhk9+IejKbjq8WxQ=="],
 
-    "@sudobility/characterbuilder_types": ["@sudobility/characterbuilder_types@0.1.7", "https://npm.pkg.github.com/download/@sudobility/characterbuilder_types/0.1.7/3097ea797e26df933ca2bfae3b9ffa3cee0575cc", { "dependencies": { "@sudobility/types": "^1.9.76", "zod": "~4.6.5" } }, "sha512-GAwiRR2ApjpqAA48N+pu6qWdMB9B3rx0wTpcEEwV5ghJ0ZCAGtQBOkn62hzoTiTgVV3d6afD/KBcIJ6sYdzmTw=="],
+    "@sudobility/characterbuilder_types": ["@sudobility/characterbuilder_types@0.1.8", "https://npm.pkg.github.com/download/@sudobility/characterbuilder_types/0.1.8/aa7827bfde93d39e0fa82bc5dd6c91bd195a6a43", { "dependencies": { "@sudobility/types": "^1.9.76", "zod": "~4.6.5" } }, "sha512-ftCcLGHSzRtdmd6ZuLXDhLt8K+kFhpFCLaOJUx3AeGe/mSeDMSx7zpjgOT7k1sbAXBrt8w1zuCKu3snHliPFnA=="],
 
     "@sudobility/consumables_service": ["@sudobility/consumables_service@0.1.17", "https://npm.pkg.github.com/download/@sudobility/consumables_service/0.1.17/649484f6a020ce0df2e2110a04c7bc796d03db14", { "peerDependencies": { "@sudobility/types": "^1.9.76", "drizzle-orm": ">=0.44.0" } }, "sha512-GfxmzMo+Du6Cixwz5fBJdxjUWJq71rRUZr2nkrdJQeTII/Pzb7rRt1bPk+sgRIBts+PXNuPkuyEQPCt/M0uXrA=="],
 

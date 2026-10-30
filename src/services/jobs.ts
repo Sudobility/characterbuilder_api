@@ -25,6 +25,7 @@ import {
   resolveDemographics,
   composePrompt,
   composeLipClause,
+  composeEyeOpeningClause,
   generationParamsSchema,
   hashSeed,
   makeId,
@@ -337,7 +338,7 @@ export async function runJob(id: string): Promise<void> {
       // back to the local deterministic composer if that endpoint is down.
       let prompt: string;
       try {
-        prompt = `${await composeRemote(spec, params.shot, params.expression, params.artStyle)} ${composeLipClause(spec)}`.trim();
+        prompt = `${await composeRemote(spec, params.shot, params.expression, params.artStyle)} ${composeEyeOpeningClause(spec)} ${composeLipClause(spec)}`.trim();
       } catch (err) {
         log('warn', '[job] remote compose failed; using local composePrompt', {
           id,

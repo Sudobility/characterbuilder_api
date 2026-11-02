@@ -25,6 +25,9 @@ routes.use('/generations/*', requireAuth);
 routes.use('/images/*', requireAuth);
 routes.use('/consumables/balance', requireAuth);
 routes.use('/consumables/dev-topup', requireAuth);
+routes.use('/consumables/purchases', requireAuth);
+routes.use('/consumables/usages', requireAuth);
+routes.use('/consumables/purchase', requireAuth);
 
 // Public: product catalog + RevenueCat webhook (no auth).
 routes.route('/consumables', consumablesPublic);

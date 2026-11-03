@@ -50,6 +50,9 @@ export const generations = pgTable('generations', {
   spec: jsonb('spec').$type<FaceSpec>(),
   demographics: jsonb('demographics').$type<Demographics>(),
   prompt: text('prompt'),
+  // The user's free-text prompt (simplified /new flow), appended to the composed
+  // image prompt at render time so the model has the original wording.
+  description: text('description'),
   params: jsonb('params').$type<GenerationParams>().notNull(),
   // The single-image `face` flow, or a sheet stage; and, for a sheet, the prior
   // image it was conditioned on.

@@ -109,6 +109,9 @@ export async function initDatabase(): Promise<void> {
   await sql`ALTER TABLE generations ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'face'`;
   await sql`ALTER TABLE generations ADD COLUMN IF NOT EXISTS source_image_id TEXT`;
   await sql`ALTER TABLE generation_images ADD COLUMN IF NOT EXISTS role TEXT`;
+  // Simplified /new flow (forward-only): the user's free-text prompt, appended to
+  // the composed image prompt at render time.
+  await sql`ALTER TABLE generations ADD COLUMN IF NOT EXISTS description TEXT`;
   // At most one running job per user — the real concurrency guarantee (an
   // app-level check races under READ COMMITTED). A losing promotion is a no-op.
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS generations_one_running_per_user

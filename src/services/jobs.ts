@@ -144,6 +144,7 @@ export async function enqueueGeneration(
         spec,
         demographics: req.demographics ?? null,
         prompt: null,
+        description: req.description ?? null,
         params,
         status: 'pending',
         creditsSpent: 0,
@@ -309,6 +310,10 @@ export async function runJob(id: string): Promise<void> {
   );
   const referenceImage = pendingReferenceImages.get(id);
   pendingReferenceImages.delete(id);
+  // The user's free-text prompt (simplified /new flow), appended verbatim to the
+  // composed image prompt so the image model has the original wording on top of
+  // the specified + cast traits.
+  const userPrompt = (job.description ?? '').trim();
 
   const started = Date.now();
   const storage = getStorage();
@@ -346,6 +351,9 @@ export async function runJob(id: string): Promise<void> {
         });
         prompt = composePrompt(spec, params);
       }
+      // Fold in the user's own wording (both compose paths) so the image model
+      // works from the raw prompt in addition to the structured/cast traits.
+      if (userPrompt) prompt = `${prompt} ${userPrompt}`.trim();
       if (!firstPrompt) firstPrompt = prompt;
       const r = await renderImage(prompt, referenceImage);
       const imageId = makeId('image', crypto.randomUUID().replace(/-/g, ''));

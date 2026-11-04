@@ -31,7 +31,10 @@ export const users = pgTable('users', {
 export const characters = pgTable('characters', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull(),
-  name: text('name').notNull(),
+  // Nullable: a character is born when the user names a generated image, and
+  // "deleting" one just clears the name (hidden from the Characters list, row
+  // and image kept).
+  name: text('name'),
   role: text('role'),
   notes: text('notes'),
   spec: jsonb('spec').$type<FaceSpec>().notNull().default({}),
@@ -53,6 +56,7 @@ export const generations = pgTable('generations', {
   // The user's free-text prompt (simplified /new flow), appended to the composed
   // image prompt at render time so the model has the original wording.
   description: text('description'),
+  imageNote: text('image_note'),
   params: jsonb('params').$type<GenerationParams>().notNull(),
   // The single-image `face` flow, or a sheet stage; and, for a sheet, the prior
   // image it was conditioned on.
@@ -80,6 +84,13 @@ export const generationImages = pgTable('generation_images', {
   prompt: text('prompt'),
   // For a sheet image, its view/direction label (e.g. `front`, `back-left`).
   role: text('role'),
+  // The character that owns this headshot (a character has many headshots, 1:M).
+  // Null = a loose candidate not yet named into a character.
+  characterId: text('character_id'),
+  note: text('note'),
+  // The framing this image was rendered at (headshot | bust | three-quarter |
+  // full-length). Lets a character separate its headshots from full-body shots.
+  shot: text('shot'),
   width: integer('width'),
   height: integer('height'),
   createdAt: timestamp('created_at', { withTimezone: true })

@@ -72,7 +72,9 @@ export async function analyze(
   return { spec: applyFemaleFacialHairRule(spec) };
 }
 
-function toGeneratedImage(row: typeof generationImages.$inferSelect): GeneratedImage {
+export function toGeneratedImage(
+  row: typeof generationImages.$inferSelect
+): GeneratedImage {
   return {
     id: row.id,
     mimeType: row.mimeType,
@@ -82,6 +84,9 @@ function toGeneratedImage(row: typeof generationImages.$inferSelect): GeneratedI
     spec: row.spec ?? undefined,
     prompt: row.prompt ?? undefined,
     role: row.role ?? undefined,
+    characterId: row.characterId ?? null,
+    note: row.note ?? null,
+    shot: row.shot ?? undefined,
   };
 }
 
@@ -242,6 +247,21 @@ export async function listGenerations(
     page.map((r) => loadGeneration(userId, r.id))
   );
   return { items, nextCursor };
+}
+
+/** Metadata (spec, owning character, role) for a single image the user owns. */
+export async function getImage(
+  userId: string,
+  imageId: string
+): Promise<GeneratedImage> {
+  const [row] = await getDb()
+    .select()
+    .from(generationImages)
+    .where(
+      and(eq(generationImages.id, imageId), eq(generationImages.userId, userId))
+    );
+  if (!row) throw new HttpError('IMAGE_NOT_FOUND', 'Image not found');
+  return toGeneratedImage(row);
 }
 
 /** Serve raw bytes for an image id the user owns. */

@@ -4,13 +4,17 @@ import {
   cursorQuerySchema,
   successResponse,
   updateCharacterRequestSchema,
+  updateCharacterImageNoteSchema,
 } from '@sudobility/characterbuilder_types';
 import {
   createCharacter,
   deleteCharacter,
   getCharacter,
+  listCharacterImages,
   listCharacters,
+  removeCharacterImage,
   updateCharacter,
+  updateCharacterImageNote,
 } from '../services/characters';
 import { ensureUser } from '../services/users';
 import { validate } from './util';
@@ -36,6 +40,34 @@ router.post('/', validate('json', createCharacterRequestSchema), async (c) => {
 
 router.get('/:id', async (c) =>
   c.json(successResponse(await getCharacter(c.get('userId'), c.req.param('id'))))
+);
+
+// Every headshot owned by this character (1:M).
+router.get('/:id/images', async (c) =>
+  c.json(
+    successResponse(await listCharacterImages(c.get('userId'), c.req.param('id')))
+  )
+);
+
+// Remove a headshot from this character (clears the association; keeps the image).
+router.delete('/:id/images/:imageId', async (c) =>
+  c.json(
+    successResponse(
+      await removeCharacterImage(
+        c.get('userId'),
+        c.req.param('id'),
+        c.req.param('imageId')
+      )
+    )
+  )
+);
+
+router.patch(
+  '/:id/images/:imageId',
+  validate('json', updateCharacterImageNoteSchema),
+  async (c) => c.json(successResponse(await updateCharacterImageNote(
+    c.get('userId'), c.req.param('id'), c.req.param('imageId'), c.req.valid('json').note
+  )))
 );
 
 router.patch(

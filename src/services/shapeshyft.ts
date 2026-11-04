@@ -132,7 +132,8 @@ function timeoutMs(): number {
  */
 export async function generateImage(
   prompt: string,
-  referenceImage?: string
+  referenceImage?: string,
+  extraReferenceImages?: string[]
 ): Promise<GeneratedBytes> {
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
@@ -163,6 +164,11 @@ export async function generateImage(
       body: JSON.stringify({
         prompt,
         ...(referenceImage ? { referenceImage } : {}),
+        // Extra reference images (e.g. clothing) — the engine auto-detects these
+        // data URLs as additional media for the model.
+        ...(extraReferenceImages?.length
+          ? { referenceImages: extraReferenceImages }
+          : {}),
       }),
       signal: controller.signal,
     });
@@ -353,6 +359,14 @@ export async function composeRemote(
   artStyle?: string
 ): Promise<string> {
   assertCompleteSpec(traits);
+  // An exact `ageYears` wins over the coarse `ageBand`: sending both lets the
+  // prompt model average a conflicting signal (e.g. a 60-year-old still described
+  // as "in their twenties"), so drop the band when a concrete age is given.
+  let promptTraits: FaceSpec = traits;
+  if (traits.ageYears != null && traits.ageBand != null) {
+    promptTraits = { ...traits };
+    delete promptTraits.ageBand;
+  }
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
@@ -369,7 +383,7 @@ export async function composeRemote(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`,
       },
-      body: JSON.stringify({ traits, shot, expression, artStyle: visualStyleById(artStyle ?? 'naturalistic') }),
+      body: JSON.stringify({ traits: promptTraits, shot, expression, artStyle: visualStyleById(artStyle ?? 'naturalistic') }),
       signal: controller.signal,
     });
     const body = (await response.json()) as ShapeShyftBody;

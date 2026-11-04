@@ -29,8 +29,12 @@ routes.use('/consumables/purchases', requireAuth);
 routes.use('/consumables/usages', requireAuth);
 routes.use('/consumables/purchase', requireAuth);
 
-// Public: product catalog + RevenueCat webhook (no auth).
+// Public: product catalog + RevenueCat webhook (no auth). The shared
+// ConsumablesApiClient fetches the catalog from `/api/v1/public/consumables/...`
+// by default, so the catalog is mounted under both the bare and the `public`
+// prefix (the `public` one is what the client actually hits).
 routes.route('/consumables', consumablesPublic);
+routes.route('/public/consumables', consumablesPublic);
 routes.route('/consumables', consumablesWebhook);
 
 // Authenticated.

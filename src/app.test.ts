@@ -24,6 +24,20 @@ describe('characterbuilder_api app', () => {
     expect(Array.isArray((r.body as { data?: unknown }).data)).toBe(true);
   });
 
+  it('serves the offerings catalog at the path the shared client fetches', async () => {
+    // ConsumablesApiClient fetches credit products from
+    // `/api/v1/public/consumables/offerings` by default; that path must resolve
+    // (a 404 here surfaces as a "Not found" error on the credits page).
+    process.env.CREDIT_PRODUCTS = 'cb_credits_100:100';
+    const r = await call(
+      new Request('http://t/api/v1/public/consumables/offerings')
+    );
+    expect(r.status).toBe(200);
+    const products = (r.body as { data?: { products?: unknown } }).data
+      ?.products;
+    expect(Array.isArray(products)).toBe(true);
+  });
+
   it('requires auth for /me', async () => {
     const r = await call(new Request('http://t/api/v1/me'));
     expect(r.status).toBe(401);

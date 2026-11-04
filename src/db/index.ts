@@ -112,6 +112,19 @@ export async function initDatabase(): Promise<void> {
   // Simplified /new flow (forward-only): the user's free-text prompt, appended to
   // the composed image prompt at render time.
   await sql`ALTER TABLE generations ADD COLUMN IF NOT EXISTS description TEXT`;
+  // Name-after-generation flow (forward-only): a character is created when the
+  // user names one of their images, and "deleting" one clears the name, so the
+  // column must allow NULL.
+  await sql`ALTER TABLE characters ALTER COLUMN name DROP NOT NULL`;
+  // 1:M character → headshots: which character owns each generated image. A
+  // variation run carries characterId (all its images belong to the character);
+  // naming a loose candidate assigns just that one image.
+  await sql`ALTER TABLE generation_images ADD COLUMN IF NOT EXISTS character_id TEXT`;
+  await sql`ALTER TABLE generations ADD COLUMN IF NOT EXISTS image_note TEXT`;
+  await sql`ALTER TABLE generation_images ADD COLUMN IF NOT EXISTS note TEXT`;
+  // Per-image framing (headshot … full-length) so a character can separate its
+  // headshots from full-body shots.
+  await sql`ALTER TABLE generation_images ADD COLUMN IF NOT EXISTS shot TEXT`;
   // At most one running job per user — the real concurrency guarantee (an
   // app-level check races under READ COMMITTED). A losing promotion is a no-op.
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS generations_one_running_per_user

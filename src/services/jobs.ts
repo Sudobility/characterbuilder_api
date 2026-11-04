@@ -55,6 +55,8 @@ import { getCharacter } from './characters';
 
 /** Transient reference images, keyed by job id (never persisted — see header). */
 const pendingReferenceImages = new Map<string, string>();
+/** Transient EXTRA reference images (e.g. clothing), keyed by job id. */
+const pendingExtraReferenceImages = new Map<string, string[]>();
 
 /** The transient inputs for a sheet job (the resolved reference + stage input). */
 interface SheetJobData {
@@ -71,7 +73,8 @@ const pendingSheetJobs = new Map<string, SheetJobData>();
 /** The render step, injectable so tests can stub the provider. */
 export type RenderFn = (
   prompt: string,
-  referenceImage?: string
+  referenceImage?: string,
+  extraReferenceImages?: string[]
 ) => Promise<{ bytes: Uint8Array; mimeType: string }>;
 let renderImage: RenderFn = generateImage;
 export function setRenderImage(fn: RenderFn): void {
@@ -145,6 +148,7 @@ export async function enqueueGeneration(
         demographics: req.demographics ?? null,
         prompt: null,
         description: req.description ?? null,
+        imageNote: characterId ? req.imageNote ?? null : null,
         params,
         status: 'pending',
         creditsSpent: 0,
@@ -170,6 +174,8 @@ export async function enqueueGeneration(
   }
 
   if (req.referenceImage) pendingReferenceImages.set(id, req.referenceImage);
+  if (req.referenceImages?.length)
+    pendingExtraReferenceImages.set(id, req.referenceImages);
   startNext(userId);
   return id;
 }
@@ -310,6 +316,8 @@ export async function runJob(id: string): Promise<void> {
   );
   const referenceImage = pendingReferenceImages.get(id);
   pendingReferenceImages.delete(id);
+  const extraReferenceImages = pendingExtraReferenceImages.get(id);
+  pendingExtraReferenceImages.delete(id);
   // The user's free-text prompt (simplified /new flow), appended verbatim to the
   // composed image prompt so the image model has the original wording on top of
   // the specified + cast traits.
@@ -355,7 +363,7 @@ export async function runJob(id: string): Promise<void> {
       // works from the raw prompt in addition to the structured/cast traits.
       if (userPrompt) prompt = `${prompt} ${userPrompt}`.trim();
       if (!firstPrompt) firstPrompt = prompt;
-      const r = await renderImage(prompt, referenceImage);
+      const r = await renderImage(prompt, referenceImage, extraReferenceImages);
       const imageId = makeId('image', crypto.randomUUID().replace(/-/g, ''));
       const key = imageKey(userId, id, imageId);
       await storage.put(key, r.bytes, r.mimeType);
@@ -367,6 +375,11 @@ export async function runJob(id: string): Promise<void> {
         mimeType: r.mimeType,
         spec,
         prompt,
+        // A variation run carries the owning character, so its images are that
+        // character's headshots (1:M). A loose run has null here.
+        characterId: job.characterId ?? null,
+        note: job.characterId ? job.imageNote ?? null : null,
+        shot: params.shot ?? null,
         width: null,
         height: null,
       });

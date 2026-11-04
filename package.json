@@ -1,6 +1,6 @@
 {
   "name": "characterbuilder_api",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "CharacterBuilder backend REST API: FaceSpec CRUD, prompt composition, image generation via shapeshyft, credits",
   "module": "src/index.ts",
   "type": "module",
@@ -17,7 +17,7 @@
   "dependencies": {
     "@hono/zod-validator": "~0.7.6",
     "@sudobility/auth_service": "^1.1.31",
-    "@sudobility/characterbuilder_types": "^0.1.11",
+    "@sudobility/characterbuilder_types": "^0.1.12",
     "@sudobility/consumables_service": "^0.1.18",
     "@sudobility/types": "^1.9.78",
     "drizzle-orm": "~0.45.4",

@@ -16,6 +16,7 @@ import {
   createSheet,
   describe,
   generate,
+  getImage,
   getImageBytes,
   listGenerations,
   loadGeneration,
@@ -76,6 +77,12 @@ router.get('/generations/:id', async (c) =>
   c.json(
     successResponse(await loadGeneration(c.get('userId'), c.req.param('id')))
   )
+);
+
+// Metadata for one image (spec, owning character, role) — lets a client resolve
+// any image by id without paging the full generation history.
+router.get('/images/:id/meta', async (c) =>
+  c.json(successResponse(await getImage(c.get('userId'), c.req.param('id'))))
 );
 
 router.get('/images/:id', async (c) => {

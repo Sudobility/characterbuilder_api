@@ -107,7 +107,7 @@ export async function createCharacter(
   if (req.previewImageId) {
     await db
       .update(generationImages)
-      .set({ characterId: id, note: null })
+      .set({ characterId: id })
       .where(
         and(
           eq(generationImages.id, req.previewImageId),

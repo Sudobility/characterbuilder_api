@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
+    "lib": [
+      "ESNext"
+    ],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
@@ -12,11 +14,15 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
-    "types": ["bun"],
+    "types": [
+      "bun"
+    ],
     "baseUrl": ".",
-    "paths": {
-      "@sudobility/characterbuilder_types": ["../characterbuilder_types/src/index.ts"]
-    }
+    "paths": {}
   },
-  "include": ["src", "tests", "vitest.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "vitest.config.ts"
+  ]
 }

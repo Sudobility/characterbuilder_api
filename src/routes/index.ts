@@ -8,6 +8,7 @@ import consumablesBalance, {
   consumablesPublic,
   consumablesWebhook,
 } from './consumables';
+import resources from './resources';
 
 const routes = new Hono();
 routes.get('/visual-styles', (c) => c.json({ success: true, data: { groups: visualStyleGroups } }));
@@ -41,6 +42,8 @@ routes.route('/consumables', consumablesWebhook);
 routes.route('/consumables', consumablesBalance);
 routes.route('/me', me);
 routes.route('/characters', characters);
+// Public resources catalog (forwards to sudobility_api).
+routes.route('/resources', resources);
 routes.route('/', generation);
 
 export default routes;

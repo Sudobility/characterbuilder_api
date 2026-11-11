@@ -1,11 +1,11 @@
 /**
- * @fileoverview Public GET /api/v1/resources — this app's view of the shared
- * Sudobility resources catalog.
+ * @fileoverview Public GET /api/v1/resources/data — this app's one-call view of
+ * the shared Sudobility resources catalog (sectioned: section → resources).
  *
- * characterbuilder owns no resources data: it forwards the read to the central
- * sudobility_api (api.sudobility.com) pinning app="characterbuilder", via
- * @sudobility/resources_service's ResourcesForwarder. Public read; writes are
- * curated through sudobility_api's admin key/MCP, never here.
+ * characterbuilder owns no resources data: it forwards the aggregate read to
+ * the central sudobility_api (api.sudobility.com) pinning app="characterbuilder",
+ * via @sudobility/resources_service's ResourcesForwarder. Public read; CRUD is
+ * curated centrally through sudobility_api's admin key/MCP, never here.
  */
 import { Hono } from 'hono';
 import { ResourcesForwarder } from '@sudobility/resources_service';
@@ -18,14 +18,14 @@ const forwarder = new ResourcesForwarder({
 
 const resourcesRouter = new Hono();
 
-resourcesRouter.get('/', async (c) => {
-  const locale = c.req.query('locale') || undefined;
+resourcesRouter.get('/data', async (c) => {
+  const lang = c.req.query('lang') || 'en';
   try {
-    const { resources } = await forwarder.list(locale);
-    return c.json({ resources });
+    const { sections } = await forwarder.data(lang);
+    return c.json({ sections });
   } catch (err) {
     console.error('[resources] forward to sudobility_api failed:', err);
-    return c.json({ resources: [] });
+    return c.json({ sections: [] });
   }
 });
 

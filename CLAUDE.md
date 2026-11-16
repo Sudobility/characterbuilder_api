@@ -24,7 +24,7 @@ Private package, BUSL-1.1 (container image only — never `npm publish`).
 
 ## Rules
 - All request/response shapes come from `@sudobility/characterbuilder_types`. Never hand-roll a DTO. Routes validate with `validate(target, schema)` (`routes/util.ts`).
-- Services throw `HttpError(code, msg)`; `app.onError` maps the code → HTTP status + error envelope.
+- Services throw `HttpError(status, msg, details?, headers?)` (an explicit HTTP status, not a typed code); `app.onError` renders the canonical `errorResponse(msg)` envelope from `@sudobility/types` with that status. The old typed error-code table / `code→status` map was removed when the response envelope was unified onto `@sudobility/types`' `BaseResponse` (`code`/`details` are no longer on the wire).
 - Credits go through `services/credits.ts` only (the single cached `ConsumablesHelper`).
 - Prompts are composed with `composePrompt` from the types package (same text as the frontend); the runner prefers a remote LLM compose and falls back to `composePrompt`.
 - Keep `schema.ts` and the `initDatabase()` DDL in lockstep; migrations are forward-only ALTERs.

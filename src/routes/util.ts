@@ -1,6 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import type { ZodType } from 'zod';
-import { errorResponse } from '@sudobility/characterbuilder_types';
+import { errorResponse } from '@sudobility/types';
 
 type Target = 'json' | 'query' | 'param';
 
@@ -8,12 +8,7 @@ type Target = 'json' | 'query' | 'param';
 export function validate<T extends ZodType>(target: Target, schema: T) {
   return zValidator(target, schema, (result, c) => {
     if (!result.success) {
-      return c.json(
-        errorResponse('Invalid request', 'VALIDATION', {
-          issues: result.error.issues,
-        }),
-        400
-      );
+      return c.json(errorResponse('Invalid request'), 400);
     }
   });
 }

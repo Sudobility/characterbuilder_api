@@ -53,8 +53,7 @@ export function assertCompleteSpec(traits: FaceSpec): void {
     (k) => (traits as Record<string, unknown>)[k] == null
   );
   if (missing.length > 0) {
-    throw new HttpError(
-      'AI_OUTPUT_INVALID',
+    throw new HttpError(502,
       `Incomplete FaceSpec sent to ShapeShyft — missing ${missing.length} trait(s): ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`
     );
   }
@@ -138,8 +137,7 @@ export async function generateImage(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError(
-      'AI_UNAVAILABLE',
+    throw new HttpError(503,
       'Image generation is not configured (SHAPESHYFT_ENDPOINT_URL / SHAPESHYFT_API_KEY unset)'
     );
   }
@@ -174,11 +172,10 @@ export async function generateImage(
     });
   } catch {
     if (timedOut)
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `Image request exceeded the ${Math.round(timeoutMs() / 1000)}s timeout`
       );
-    throw new HttpError('AI_UNAVAILABLE', 'Image provider is unreachable');
+    throw new HttpError(503, 'Image provider is unreachable');
   } finally {
     clearTimeout(timer);
   }
@@ -187,16 +184,15 @@ export async function generateImage(
   try {
     body = (await response.json()) as ShapeShyftBody;
   } catch {
-    throw new HttpError(
-      'AI_GENERATION_FAILED',
+    throw new HttpError(502,
       `ShapeShyft ${name} returned a non-JSON body (HTTP ${response.status})`
     );
   }
   if (!response.ok || body.success === false) {
     const message = body.error ?? `HTTP ${response.status}`;
     if (/refus|content[ _]policy|safety/i.test(message))
-      throw new HttpError('AI_CONTENT_REFUSED', 'The provider declined this prompt');
-    throw new HttpError('AI_GENERATION_FAILED', `ShapeShyft ${name} failed: ${message}`);
+      throw new HttpError(422, 'The provider declined this prompt');
+    throw new HttpError(502, `ShapeShyft ${name} failed: ${message}`);
   }
 
   const payload = body.data ?? body;
@@ -204,10 +200,10 @@ export async function generateImage(
     (m) => m.type === 'image' && isBase64(m.data)
   );
   if (!media)
-    throw new HttpError('AI_OUTPUT_INVALID', 'The image endpoint returned no image');
+    throw new HttpError(502, 'The image endpoint returned no image');
   const bytes = Buffer.from(media.data, 'base64');
   if (!isValidPng(bytes))
-    throw new HttpError('AI_OUTPUT_INVALID', 'The image endpoint returned invalid PNG data');
+    throw new HttpError(502, 'The image endpoint returned invalid PNG data');
 
   log('info', '[image] generated', { endpoint: name, ms: Date.now() - started });
   return { bytes, mimeType: 'image/png' };
@@ -228,8 +224,7 @@ export async function generateSheet(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError(
-      'AI_UNAVAILABLE',
+    throw new HttpError(503,
       'Image generation is not configured (SHAPESHYFT_ENDPOINT_URL / SHAPESHYFT_API_KEY unset)'
     );
   }
@@ -255,11 +250,10 @@ export async function generateSheet(
     });
   } catch {
     if (timedOut)
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `Sheet request exceeded the ${Math.round(timeoutMs() / 1000)}s timeout`
       );
-    throw new HttpError('AI_UNAVAILABLE', 'Image provider is unreachable');
+    throw new HttpError(503, 'Image provider is unreachable');
   } finally {
     clearTimeout(timer);
   }
@@ -268,16 +262,15 @@ export async function generateSheet(
   try {
     body = (await response.json()) as ShapeShyftBody;
   } catch {
-    throw new HttpError(
-      'AI_GENERATION_FAILED',
+    throw new HttpError(502,
       `ShapeShyft ${endpoint} returned a non-JSON body (HTTP ${response.status})`
     );
   }
   if (!response.ok || body.success === false) {
     const message = body.error ?? `HTTP ${response.status}`;
     if (/refus|content[ _]policy|safety/i.test(message))
-      throw new HttpError('AI_CONTENT_REFUSED', 'The provider declined this prompt');
-    throw new HttpError('AI_GENERATION_FAILED', `ShapeShyft ${endpoint} failed: ${message}`);
+      throw new HttpError(422, 'The provider declined this prompt');
+    throw new HttpError(502, `ShapeShyft ${endpoint} failed: ${message}`);
   }
 
   const payload = body.data ?? body;
@@ -289,7 +282,7 @@ export async function generateSheet(
     if (isValidPng(bytes)) images.push({ bytes, mimeType: 'image/png' });
   }
   if (images.length === 0)
-    throw new HttpError('AI_OUTPUT_INVALID', `The ${endpoint} endpoint returned no images`);
+    throw new HttpError(502, `The ${endpoint} endpoint returned no images`);
 
   log('info', '[sheet] generated', {
     endpoint,
@@ -370,7 +363,7 @@ export async function composeRemote(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError('AI_UNAVAILABLE', 'Prompt endpoint is not configured');
+    throw new HttpError(503, 'Prompt endpoint is not configured');
   }
   const name = promptEndpointName();
   const url = `${base.replace(/\/+$/, '')}/${name}`;
@@ -388,8 +381,7 @@ export async function composeRemote(
     });
     const body = (await response.json()) as ShapeShyftBody;
     if (!response.ok || body.success === false) {
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `ShapeShyft ${name} failed: ${body.error ?? `HTTP ${response.status}`}`
       );
     }
@@ -398,7 +390,7 @@ export async function composeRemote(
       | undefined;
     const prompt = output?.prompt;
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
-      throw new HttpError('AI_OUTPUT_INVALID', `${name} returned no prompt`);
+      throw new HttpError(502, `${name} returned no prompt`);
     }
     return prompt;
   } finally {
@@ -420,7 +412,7 @@ export async function refineDistributionsRemote(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError('AI_UNAVAILABLE', 'Distribution endpoint is not configured');
+    throw new HttpError(503, 'Distribution endpoint is not configured');
   }
   const name = distributionEndpointName();
   const url = `${base.replace(/\/+$/, '')}/${name}`;
@@ -438,8 +430,7 @@ export async function refineDistributionsRemote(
     });
     const body = (await response.json()) as ShapeShyftBody;
     if (!response.ok || body.success === false) {
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `ShapeShyft ${name} failed: ${body.error ?? `HTTP ${response.status}`}`
       );
     }
@@ -481,7 +472,7 @@ export async function attractiveDistributionsRemote(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError('AI_UNAVAILABLE', 'Attractiveness endpoint is not configured');
+    throw new HttpError(503, 'Attractiveness endpoint is not configured');
   }
   const name = attractiveEndpointName();
   const url = `${base.replace(/\/+$/, '')}/${name}`;
@@ -499,8 +490,7 @@ export async function attractiveDistributionsRemote(
     });
     const body = (await response.json()) as ShapeShyftBody;
     if (!response.ok || body.success === false) {
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `ShapeShyft ${name} failed: ${body.error ?? `HTTP ${response.status}`}`
       );
     }
@@ -540,7 +530,7 @@ export async function describeToSpecRemote(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError('AI_UNAVAILABLE', 'Describe endpoint is not configured');
+    throw new HttpError(503, 'Describe endpoint is not configured');
   }
   const name = describeEndpointName();
   const url = `${base.replace(/\/+$/, '')}/${name}`;
@@ -562,8 +552,7 @@ export async function describeToSpecRemote(
     });
     const body = (await response.json()) as ShapeShyftBody;
     if (!response.ok || body.success === false) {
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `ShapeShyft ${name} failed: ${body.error ?? `HTTP ${response.status}`}`
       );
     }
@@ -589,7 +578,7 @@ export async function analyzeImageRemote(
   const base = getEnv('SHAPESHYFT_ENDPOINT_URL');
   const key = getEnv('SHAPESHYFT_API_KEY');
   if (!base || !key || !shapeShyftConfigured()) {
-    throw new HttpError('AI_UNAVAILABLE', 'Analyze endpoint is not configured');
+    throw new HttpError(503, 'Analyze endpoint is not configured');
   }
   const name = analyzeEndpointName();
   const url = `${base.replace(/\/+$/, '')}/${name}`;
@@ -611,8 +600,7 @@ export async function analyzeImageRemote(
     });
     const body = (await response.json()) as ShapeShyftBody;
     if (!response.ok || body.success === false) {
-      throw new HttpError(
-        'AI_GENERATION_FAILED',
+      throw new HttpError(502,
         `ShapeShyft ${name} failed: ${body.error ?? `HTTP ${response.status}`}`
       );
     }

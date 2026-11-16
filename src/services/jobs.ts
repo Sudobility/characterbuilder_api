@@ -128,7 +128,7 @@ export async function enqueueGeneration(
   // Reserve the full cost atomically (402 if the balance can't cover it).
   const reserved = await reserveCredits(userId, cost, `gen:${id}`);
   if (!reserved.success) {
-    throw new HttpError('INSUFFICIENT_CREDITS', 'Not enough credits', {
+    throw new HttpError(402, 'Not enough credits', {
       required: cost,
       balance: reserved.balance,
     });
@@ -196,7 +196,7 @@ export async function enqueueSheet(
 
   const reserved = await reserveCredits(userId, cost, `gen:${id}`);
   if (!reserved.success) {
-    throw new HttpError('INSUFFICIENT_CREDITS', 'Not enough credits', {
+    throw new HttpError(402, 'Not enough credits', {
       required: cost,
       balance: reserved.balance,
     });

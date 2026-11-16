@@ -1,9 +1,5 @@
 import { Hono, type Context } from 'hono';
-import {
-  API_ERROR_CODES,
-  errorResponse,
-  successResponse,
-} from '@sudobility/characterbuilder_types';
+import { errorResponse, successResponse } from '@sudobility/types';
 import {
   consumables,
   creditProducts,
@@ -66,22 +62,13 @@ router.post('/purchase', async (c) => {
   };
   if (!body.product_id || !body.transaction_ref_id) {
     return c.json(
-      errorResponse(
-        'product_id and transaction_ref_id are required',
-        API_ERROR_CODES.VALIDATION
-      ),
+      errorResponse('product_id and transaction_ref_id are required'),
       400
     );
   }
   const credits = creditsForProduct(body.product_id);
   if (credits === null) {
-    return c.json(
-      errorResponse(
-        `Unknown product ${body.product_id}`,
-        API_ERROR_CODES.VALIDATION
-      ),
-      400
-    );
+    return c.json(errorResponse(`Unknown product ${body.product_id}`), 400);
   }
   let verified;
   try {
@@ -94,17 +81,11 @@ router.post('/purchase', async (c) => {
     log('error', 'RevenueCat purchase verification failed', {
       error: String(error),
     });
-    return c.json(
-      errorResponse('Unable to verify purchase', API_ERROR_CODES.AI_UNAVAILABLE),
-      503
-    );
+    return c.json(errorResponse('Unable to verify purchase'), 503);
   }
   if (!verified || verified.product_id !== body.product_id) {
     return c.json(
-      errorResponse(
-        'Purchase could not be verified for this account',
-        API_ERROR_CODES.VALIDATION
-      ),
+      errorResponse('Purchase could not be verified for this account'),
       400
     );
   }

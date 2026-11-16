@@ -2,10 +2,10 @@ import { Hono } from 'hono';
 import {
   createCharacterRequestSchema,
   cursorQuerySchema,
-  successResponse,
   updateCharacterRequestSchema,
   updateCharacterImageNoteSchema,
 } from '@sudobility/characterbuilder_types';
+import { successResponse } from '@sudobility/types';
 import {
   createCharacter,
   deleteCharacter,
@@ -23,9 +23,7 @@ const router = new Hono();
 
 router.get('/', validate('query', cursorQuerySchema), async (c) => {
   const { limit, cursor } = c.req.valid('query');
-  return c.json(
-    successResponse(await listCharacters(c.get('userId'), limit, cursor))
-  );
+  return c.json(await listCharacters(c.get('userId'), limit, cursor));
 });
 
 router.post('/', validate('json', createCharacterRequestSchema), async (c) => {

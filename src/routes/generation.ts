@@ -7,9 +7,9 @@ import {
   distributionRequestSchema,
   generateRequestSchema,
   sheetRequestSchema,
-  successResponse,
   type ComposeResponse,
 } from '@sudobility/characterbuilder_types';
+import { successResponse } from '@sudobility/types';
 import {
   analyze,
   compose,
@@ -68,9 +68,7 @@ router.post('/generate/sheet', validate('json', sheetRequestSchema), async (c) =
 
 router.get('/generations', validate('query', cursorQuerySchema), async (c) => {
   const { limit, cursor } = c.req.valid('query');
-  return c.json(
-    successResponse(await listGenerations(c.get('userId'), limit, cursor))
-  );
+  return c.json(await listGenerations(c.get('userId'), limit, cursor));
 });
 
 router.get('/generations/:id', async (c) =>

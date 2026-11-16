@@ -6,8 +6,8 @@ import {
   type CreateCharacterRequest,
   type GeneratedImage,
   type UpdateCharacterRequest,
-  type Paginated,
 } from '@sudobility/characterbuilder_types';
+import { type PaginatedResponse } from '@sudobility/types';
 import { getDb, characters, generationImages } from '../db';
 import { HttpError } from '../lib/errors';
 import { toGeneratedImage } from './generation';
@@ -45,7 +45,7 @@ export async function listCharacters(
   userId: string,
   limit: number,
   cursor?: string
-): Promise<Paginated<Character>> {
+): Promise<PaginatedResponse<Character>> {
   const db = getDb();
   const after = cursor ? decodeCursor(cursor) : null;
   const where = after
@@ -68,7 +68,12 @@ export async function listCharacters(
     .limit(limit + 1);
   const page = rows.slice(0, limit);
   const nextCursor = rows.length > limit ? encodeCursor(page[page.length - 1]!) : null;
-  return { items: page.map(toCharacter), nextCursor };
+  return {
+    success: true,
+    data: page.map(toCharacter),
+    timestamp: new Date().toISOString(),
+    pagination: { hasNextPage: nextCursor != null, nextCursor, pageSize: limit },
+  };
 }
 
 export async function getCharacter(
@@ -79,7 +84,7 @@ export async function getCharacter(
     .select()
     .from(characters)
     .where(and(eq(characters.id, id), eq(characters.userId, userId)));
-  if (!row) throw new HttpError('CHARACTER_NOT_FOUND', 'Character not found');
+  if (!row) throw new HttpError(404, 'Character not found');
   return toCharacter(row);
 }
 
@@ -199,7 +204,7 @@ export async function updateCharacterImageNote(
       eq(generationImages.characterId, characterId)
     ))
     .returning();
-  if (!row) throw new HttpError('IMAGE_NOT_FOUND', 'Character image not found');
+  if (!row) throw new HttpError(404, 'Character image not found');
   return toGeneratedImage(row);
 }
 
@@ -229,5 +234,5 @@ export async function deleteCharacter(userId: string, id: string): Promise<void>
     .where(and(eq(characters.id, id), eq(characters.userId, userId)))
     .returning({ id: characters.id });
   if (result.length === 0)
-    throw new HttpError('CHARACTER_NOT_FOUND', 'Character not found');
+    throw new HttpError(404, 'Character not found');
 }

@@ -41,7 +41,8 @@ describe('characterbuilder_api app', () => {
   it('requires auth for /me', async () => {
     const r = await call(new Request('http://t/api/v1/me'));
     expect(r.status).toBe(401);
-    expect(r.body?.code).toBe('UNAUTHORIZED');
+    expect(r.body?.success).toBe(false);
+    expect(r.body?.error).toBe('Authentication required');
   });
 
   it('validates /generate before touching the database (dev auth)', async () => {
@@ -59,7 +60,8 @@ describe('characterbuilder_api app', () => {
       })
     );
     expect(r.status).toBe(400);
-    expect(r.body?.code).toBe('VALIDATION');
+    expect(r.body?.success).toBe(false);
+    expect(r.body?.error).toBe('Invalid request');
   });
 
   it('returns trait distributions for demographics without a database', async () => {

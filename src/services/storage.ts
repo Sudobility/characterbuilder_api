@@ -53,8 +53,7 @@ export function getStorage(): StorageDriver {
   } else if (kind === 'memory') {
     driver = new MemoryStorage();
   } else {
-    throw new HttpError(
-      'STORAGE_UNAVAILABLE',
+    throw new HttpError(503,
       `Unknown STORAGE_DRIVER=${kind} (use memory|local)`
     );
   }

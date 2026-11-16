@@ -2,7 +2,12 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
-import { errorResponse, successResponse } from '@sudobility/characterbuilder_types';
+import {
+  errorResponse,
+  successResponse,
+  type ApiInfoResponse,
+  type HealthResponse,
+} from '@sudobility/types';
 import { getEnv, getEnvList } from './lib/env-helper';
 import { log } from './lib/log';
 import { HttpError } from './lib/errors';
@@ -39,24 +44,32 @@ app.use(
   })
 );
 
-app.get('/', (c) => c.json(successResponse(healthData())));
-app.get('/health', (c) => c.json(successResponse(healthData())));
+const appVersion = (): string => getEnv('APP_VERSION') ?? '';
+app.get('/', (c) =>
+  c.json(
+    successResponse<ApiInfoResponse>({
+      name: 'characterbuilder_api',
+      version: appVersion(),
+      status: 'healthy',
+    })
+  )
+);
+app.get('/health', (c) =>
+  c.json(successResponse<HealthResponse>({ status: 'ok', version: appVersion() }))
+);
 app.get('/health/ready', (c) => c.json(successResponse(healthData())));
 app.route('/api/v1', routes);
 
 app.onError((err, c) => {
   if (err instanceof HttpError) {
     for (const [k, v] of Object.entries(err.headers ?? {})) c.header(k, v);
-    return c.json(
-      errorResponse(err.message, err.code, err.details),
-      err.status as 400
-    );
+    return c.json(errorResponse(err.message), err.status as 400);
   }
   log('error', 'unhandled error', {
     requestId: c.get('requestId'),
     error: err instanceof Error ? err.message : String(err),
   });
-  return c.json(errorResponse('Internal server error', 'INTERNAL'), 500);
+  return c.json(errorResponse('Internal server error'), 500);
 });
 
-app.notFound((c) => c.json(errorResponse('Not found', 'NOT_FOUND'), 404));
+app.notFound((c) => c.json(errorResponse('Not found'), 404));

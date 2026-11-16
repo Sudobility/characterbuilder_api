@@ -6,7 +6,7 @@
  * CharacterBuilder has no API keys — every request is a signed-in user.
  */
 import type { Context, Next } from 'hono';
-import { errorResponse } from '@sudobility/characterbuilder_types';
+import { errorResponse } from '@sudobility/types';
 import { getEnvList, isTestMode } from '../lib/env-helper';
 import { isFirebaseConfigured } from '../lib/config';
 import { verifyFirebaseToken } from '../services/firebase';
@@ -102,7 +102,7 @@ const bearer = (c: Context): string | null => {
 export async function requireAuth(c: Context, next: Next) {
   const token = bearer(c);
   if (!token) {
-    return c.json(errorResponse('Authentication required', 'UNAUTHORIZED'), 401);
+    return c.json(errorResponse('Authentication required'), 401);
   }
   const result = await resolveToken(token);
   if (!result.ok) {
@@ -112,7 +112,7 @@ export async function requireAuth(c: Context, next: Next) {
         : result.reason === 'anonymous'
           ? 'Sign in with a full account'
           : 'Invalid or expired token';
-    return c.json(errorResponse(msg, 'UNAUTHORIZED'), 401);
+    return c.json(errorResponse(msg), 401);
   }
   c.set('principal', result.principal);
   c.set('userId', result.principal.userId);

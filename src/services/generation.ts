@@ -12,9 +12,9 @@ import {
   type AnalyzeRequest,
   type AnalyzeResponse,
   type FaceSpec,
-  type Paginated,
   type SheetRequest,
 } from '@sudobility/characterbuilder_types';
+import { type PaginatedResponse } from '@sudobility/types';
 import { getDb, generations, generationImages } from '../db';
 import { HttpError } from '../lib/errors';
 import { getStorage, imageUrl } from './storage';
@@ -156,14 +156,14 @@ export async function createSheet(
 
   if (req.kind === 'head-sheet') {
     if (req.referenceImage && req.sourceImageId) {
-      throw new HttpError('VALIDATION', 'Provide exactly one of sourceImageId or referenceImage');
+      throw new HttpError(400, 'Provide exactly one of sourceImageId or referenceImage');
     }
     if (req.referenceImage) {
       referenceImage = req.referenceImage;
     } else if (req.sourceImageId) {
       referenceImage = await referenceFromImage(userId, req.sourceImageId);
     } else {
-      throw new HttpError('VALIDATION', 'A head sheet needs a sourceImageId or an uploaded referenceImage');
+      throw new HttpError(400, 'A head sheet needs a sourceImageId or an uploaded referenceImage');
     }
     const id = await enqueueSheet(userId, req, {
       kind: 'head-sheet',
@@ -201,7 +201,7 @@ export async function loadGeneration(
     .select()
     .from(generations)
     .where(and(eq(generations.id, id), eq(generations.userId, userId)));
-  if (!gen) throw new HttpError('GENERATION_NOT_FOUND', 'Generation not found');
+  if (!gen) throw new HttpError(404, 'Generation not found');
   const imgs = await getDb()
     .select()
     .from(generationImages)
@@ -225,7 +225,7 @@ export async function listGenerations(
   userId: string,
   limit: number,
   cursor?: string
-): Promise<Paginated<Generation>> {
+): Promise<PaginatedResponse<Generation>> {
   const after = cursor
     ? Buffer.from(cursor, 'base64url').toString('utf8')
     : null;
@@ -246,7 +246,12 @@ export async function listGenerations(
   const items = await Promise.all(
     page.map((r) => loadGeneration(userId, r.id))
   );
-  return { items, nextCursor };
+  return {
+    success: true,
+    data: items,
+    timestamp: new Date().toISOString(),
+    pagination: { hasNextPage: nextCursor != null, nextCursor, pageSize: limit },
+  };
 }
 
 /** Metadata (spec, owning character, role) for a single image the user owns. */
@@ -260,7 +265,7 @@ export async function getImage(
     .where(
       and(eq(generationImages.id, imageId), eq(generationImages.userId, userId))
     );
-  if (!row) throw new HttpError('IMAGE_NOT_FOUND', 'Image not found');
+  if (!row) throw new HttpError(404, 'Image not found');
   return toGeneratedImage(row);
 }
 
@@ -275,8 +280,8 @@ export async function getImageBytes(
     .where(
       and(eq(generationImages.id, imageId), eq(generationImages.userId, userId))
     );
-  if (!row) throw new HttpError('IMAGE_NOT_FOUND', 'Image not found');
+  if (!row) throw new HttpError(404, 'Image not found');
   const bytes = await getStorage().get(row.storageKey);
-  if (!bytes) throw new HttpError('IMAGE_NOT_FOUND', 'Image bytes not found');
+  if (!bytes) throw new HttpError(404, 'Image bytes not found');
   return { bytes, mimeType: row.mimeType };
 }

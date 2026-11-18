@@ -11,8 +11,15 @@ import {
   jsonb,
   timestamp,
   serial,
+  uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import {
+  createEntitiesTablePublic,
+  createEntityApiKeysTablePublic,
+  createEntityInvitationsTablePublic,
+  createEntityMembersTablePublic,
+} from '@sudobility/entity_service';
 import type {
   Demographics,
   FaceSpec,
@@ -24,13 +31,45 @@ export const users = pgTable('users', {
   email: text('email'),
   emailVerified: boolean('email_verified').notNull().default(false),
   displayName: text('display_name'),
+  // The user's currently-selected entity (credits are keyed to an entity, not
+  // the user). Null until the first authenticated request resolves a personal
+  // entity. See services/entities.ts `resolveEntity`.
+  activeEntityId: uuid('active_entity_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/*
+ * Alias mapping of the `users` table with the drizzle PROPERTY names
+ * `@sudobility/entity_service` expects (firebase_uid/email/display_name) — our
+ * canonical `users` table uses id/displayName. Passed as `usersTable` to
+ * createEntityHelpers so its member joins resolve. Reads only.
+ */
+export const entityUsersTable = pgTable('users', {
+  firebase_uid: text('id').primaryKey(),
+  email: text('email'),
+  display_name: text('display_name'),
+});
+
+/*
+ * Entity layer (@sudobility/entity_service). Credits are owned by an *entity*,
+ * not a user; every user gets one personal entity on first request and can
+ * create organization entities with members/invitations/API keys (full music
+ * parity). Domain tables (characters/generations/…) are entity-owned via their
+ * `entity_id` column.
+ */
+export const entities = createEntitiesTablePublic('characterbuilder');
+export const entityMembers = createEntityMembersTablePublic('characterbuilder');
+export const entityInvitations = createEntityInvitationsTablePublic('characterbuilder');
+export const entityApiKeys = createEntityApiKeysTablePublic('characterbuilder');
+
 export const characters = pgTable('characters', {
   id: text('id').primaryKey(),
+  // `userId` is the creator/author; ownership is scoped by `entityId` (the
+  // user's personal entity). Both are kept in sync so history follows the
+  // entity, mirroring music/screenwriter's entity-owned domain tables.
   userId: text('user_id').notNull(),
+  entityId: uuid('entity_id'),
   // Nullable: a character is born when the user names a generated image, and
   // "deleting" one just clears the name (hidden from the Characters list, row
   // and image kept).
@@ -46,6 +85,7 @@ export const characters = pgTable('characters', {
 export const generations = pgTable('generations', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull(),
+  entityId: uuid('entity_id'),
   characterId: text('character_id'),
   // The job's inputs: a base (partial) spec the caster fills per image, plus the
   // demographics that steer that casting. `prompt` holds the first image's prompt
@@ -77,6 +117,7 @@ export const generationImages = pgTable('generation_images', {
   id: text('id').primaryKey(),
   generationId: text('generation_id').notNull(),
   userId: text('user_id').notNull(),
+  entityId: uuid('entity_id'),
   storageKey: text('storage_key').notNull(),
   mimeType: text('mime_type').notNull().default('image/png'),
   // The fully-cast spec and composed prompt that produced THIS image.
@@ -100,10 +141,14 @@ export const generationImages = pgTable('generation_images', {
 
 /* ── consumables ledger (consumables_service shape) ── */
 
+// The `user_id` column holds an ENTITY id (credits are entity-owned). The
+// nullable `entity_id` column + the `set_consumable_entity_id` trigger (see
+// index.ts) backfill it when `user_id` is a UUID, mirroring music_api.
 export const consumableBalances = pgTable('consumable_balances', {
   user_id: varchar('user_id', { length: 128 }).primaryKey(),
   balance: integer('balance').notNull().default(0),
   initial_credits: integer('initial_credits').notNull().default(0),
+  entity_id: uuid('entity_id').references(() => entities.id, { onDelete: 'cascade' }),
   created_at: timestamp('created_at').defaultNow().notNull(),
   updated_at: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -117,6 +162,7 @@ export const consumablePurchases = pgTable('consumable_purchases', {
   product_id: varchar('product_id', { length: 255 }),
   price_cents: integer('price_cents'),
   currency: varchar('currency', { length: 10 }),
+  entity_id: uuid('entity_id').references(() => entities.id, { onDelete: 'cascade' }),
   created_at: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -126,5 +172,6 @@ export const consumableUsages = pgTable('consumable_usages', {
   credits: integer('credits').notNull().default(1),
   reference: varchar('reference', { length: 500 }),
   filename: varchar('filename', { length: 500 }),
+  entity_id: uuid('entity_id').references(() => entities.id, { onDelete: 'cascade' }),
   created_at: timestamp('created_at').defaultNow().notNull(),
 });

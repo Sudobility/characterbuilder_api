@@ -9,6 +9,7 @@
         "@sudobility/auth_service": "^1.1.36",
         "@sudobility/characterbuilder_types": "^0.1.17",
         "@sudobility/consumables_service": "^0.1.23",
+        "@sudobility/entity_service": "^1.0.56",
         "@sudobility/resources_service": "^0.1.5",
         "@sudobility/types": "^1.11.2",
         "drizzle-orm": "~0.45.4",
@@ -129,6 +130,8 @@
     "@sudobility/characterbuilder_types": ["@sudobility/characterbuilder_types@0.1.17", "https://npm.pkg.github.com/download/@sudobility/characterbuilder_types/0.1.17/853d36b435cb16866bf85a9bd24a4d6ba0a636cc", { "dependencies": { "@sudobility/types": "^1.11.2", "zod": "~4.6.5" } }, "sha512-pxtiZavrYNwG6VWzDwBDH2TLbA7meh1YSdz37J9synhhUHSuK/hR6YuMCUYy8Zr2Fbaswxkdxm8RT3NaqV/0lA=="],
 
     "@sudobility/consumables_service": ["@sudobility/consumables_service@0.1.23", "https://npm.pkg.github.com/download/@sudobility/consumables_service/0.1.23/cffd1f5b41819e4dd16bac4e3996861fd74a606c", { "peerDependencies": { "@sudobility/types": "^1.11.2", "drizzle-orm": ">=0.44.0" } }, "sha512-cVuLu5a0FAWXPNsbBzd2zFA9IQ6HG73wPxAxQ/m7XuLOExsLkgZbnd9gLAaFgq+eakjesn81qj+4UGo9G0PFLw=="],
+
+    "@sudobility/entity_service": ["@sudobility/entity_service@1.0.56", "https://npm.pkg.github.com/download/@sudobility/entity_service/1.0.56/fc31bd0f5bd05f6d055f5358c0bc112b43ba34dd", { "peerDependencies": { "@sudobility/types": "^1.11.2", "drizzle-orm": "^0.45.0", "hono": "^4.0.0" } }, "sha512-VX5ppoBP2HTkO1NYqpf1oLb8JFrkoN84cDVqOp3gPu9mGxY2m/twcvf/Dzg84aBm+2UuN2ZPK6bFjrQmND7N7A=="],
 
     "@sudobility/resources_service": ["@sudobility/resources_service@0.1.5", "https://npm.pkg.github.com/download/@sudobility/resources_service/0.1.5/7e44ae230ebc6b219431850f66a2fe0b95c194a2", { "peerDependencies": { "@sudobility/types": "^1.11.2", "drizzle-orm": ">=0.44.0" } }, "sha512-hWITsCIEGgpxLIxFtLgTZOc49YLmyMvrJm0twHQDtpxNZb1/0Bvfq81QaeEj59BCprXpF2OuYcMambyoRTf4fg=="],
 

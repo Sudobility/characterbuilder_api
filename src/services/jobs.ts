@@ -42,6 +42,7 @@ import { generationImages, generations, getDb } from '../db';
 import { HttpError } from '../lib/errors';
 import { log } from '../lib/log';
 import { releaseCredits, reserveCredits } from './credits';
+import { personalEntityId } from './entities';
 import { getStorage } from './storage';
 import {
   assertCompleteSpec,
@@ -95,17 +96,17 @@ const imageKey = (userId: string, generationId: string, imageId: string) =>
  * (`getCharacter` throws for someone else's / a missing character).
  */
 async function resolveBaseSpec(
-  userId: string,
+  entityId: string,
   req: { characterId?: string; spec?: FaceSpec }
 ): Promise<{ spec: FaceSpec; characterId: string | null }> {
   if (req.spec) {
     const characterId = req.characterId
-      ? (await getCharacter(userId, req.characterId)).id
+      ? (await getCharacter(entityId, req.characterId)).id
       : null;
     return { spec: req.spec, characterId };
   }
   if (req.characterId) {
-    const character = await getCharacter(userId, req.characterId);
+    const character = await getCharacter(entityId, req.characterId);
     return { spec: character.spec, characterId: character.id };
   }
   return { spec: {}, characterId: null };
@@ -116,6 +117,7 @@ async function resolveBaseSpec(
  * Throws INSUFFICIENT_CREDITS (402) when the balance can't cover the reserve.
  */
 export async function enqueueGeneration(
+  entityId: string,
   userId: string,
   req: GenerateRequest
 ): Promise<string> {
@@ -123,10 +125,10 @@ export async function enqueueGeneration(
   const cost = params.count;
 
   const id = makeId('generation', crypto.randomUUID().replace(/-/g, ''));
-  const { spec, characterId } = await resolveBaseSpec(userId, req);
+  const { spec, characterId } = await resolveBaseSpec(entityId, req);
 
-  // Reserve the full cost atomically (402 if the balance can't cover it).
-  const reserved = await reserveCredits(userId, cost, `gen:${id}`);
+  // Reserve the full cost atomically against the entity (402 if short).
+  const reserved = await reserveCredits(entityId, cost, `gen:${id}`);
   if (!reserved.success) {
     throw new HttpError(402, 'Not enough credits', {
       required: cost,
@@ -143,6 +145,7 @@ export async function enqueueGeneration(
       .values({
         id,
         userId,
+        entityId,
         characterId,
         spec,
         demographics: req.demographics ?? null,
@@ -157,7 +160,7 @@ export async function enqueueGeneration(
         idempotencyKey: req.idempotencyKey ?? null,
       });
   } catch (err) {
-    await releaseCredits(userId, cost, `gen:${id}`);
+    await releaseCredits(entityId, cost, `gen:${id}`);
     if (req.idempotencyKey) {
       const [existing] = await getDb()
         .select({ id: generations.id })
@@ -187,6 +190,7 @@ export async function enqueueGeneration(
  * reference + stage input transiently (like `referenceImage`, not persisted).
  */
 export async function enqueueSheet(
+  entityId: string,
   userId: string,
   req: SheetRequest,
   data: SheetJobData
@@ -194,7 +198,7 @@ export async function enqueueSheet(
   const cost = SHEET_EXPECTED_COUNT[req.kind];
   const id = makeId('generation', crypto.randomUUID().replace(/-/g, ''));
 
-  const reserved = await reserveCredits(userId, cost, `gen:${id}`);
+  const reserved = await reserveCredits(entityId, cost, `gen:${id}`);
   if (!reserved.success) {
     throw new HttpError(402, 'Not enough credits', {
       required: cost,
@@ -208,6 +212,7 @@ export async function enqueueSheet(
       .values({
         id,
         userId,
+        entityId,
         characterId: req.characterId ?? null,
         spec: null,
         demographics: null,
@@ -222,7 +227,7 @@ export async function enqueueSheet(
         idempotencyKey: req.idempotencyKey ?? null,
       });
   } catch (err) {
-    await releaseCredits(userId, cost, `gen:${id}`);
+    await releaseCredits(entityId, cost, `gen:${id}`);
     if (req.idempotencyKey) {
       const [existing] = await getDb()
         .select({ id: generations.id })
@@ -303,6 +308,8 @@ export async function runJob(id: string): Promise<void> {
   }
 
   const userId = job.userId;
+  // Entity that owns the images (set at enqueue; fall back for pre-migration rows).
+  const entityId = job.entityId ?? (await personalEntityId(userId));
   const params = generationParamsSchema.parse(job.params);
   const cost = params.count;
   const baseSpec = (job.spec ?? {}) as FaceSpec;
@@ -371,6 +378,7 @@ export async function runJob(id: string): Promise<void> {
         id: imageId,
         generationId: id,
         userId,
+        entityId,
         storageKey: key,
         mimeType: r.mimeType,
         spec,
@@ -392,9 +400,10 @@ export async function runJob(id: string): Promise<void> {
   const delivered = imageRows.length;
   if (delivered > 0) await getDb().insert(generationImages).values(imageRows);
 
-  // Settle: release whatever we reserved but didn't deliver.
+  // Settle: release whatever we reserved but didn't deliver, to the owning
+  // entity (the one that reserved at enqueue).
   if (delivered < cost) {
-    await releaseCredits(userId, cost - delivered, `gen:${id}`);
+    await releaseCredits(entityId, cost - delivered, `gen:${id}`);
   }
 
   await finish(id, {
@@ -420,6 +429,7 @@ export async function runJob(id: string): Promise<void> {
  */
 async function runSheetJob(job: typeof generations.$inferSelect): Promise<void> {
   const { id, userId } = job;
+  const entityId = job.entityId ?? (await personalEntityId(userId));
   const kind = job.kind as SheetKind;
   const reserved = job.reservedCredits;
   const data = pendingSheetJobs.get(id);
@@ -452,6 +462,7 @@ async function runSheetJob(job: typeof generations.$inferSelect): Promise<void> 
         id: imageId,
         generationId: id,
         userId,
+        entityId,
         storageKey: key,
         mimeType: img.mimeType,
         prompt,
@@ -468,7 +479,7 @@ async function runSheetJob(job: typeof generations.$inferSelect): Promise<void> 
   const delivered = imageRows.length;
   if (delivered > 0) await getDb().insert(generationImages).values(imageRows);
   if (delivered < reserved) {
-    await releaseCredits(userId, reserved - delivered, `gen:${id}`);
+    await releaseCredits(entityId, reserved - delivered, `gen:${id}`);
   }
 
   await finish(id, {
@@ -493,7 +504,8 @@ export async function recoverOrphanedJobs(): Promise<void> {
     .where(eq(generations.status, 'running'));
   for (const job of stuck) {
     if (job.reservedCredits > 0) {
-      await releaseCredits(job.userId, job.reservedCredits, `gen:${job.id}`);
+      const entityId = job.entityId ?? (await personalEntityId(job.userId));
+      await releaseCredits(entityId, job.reservedCredits, `gen:${job.id}`);
     }
     await finish(job.id, {
       status: 'failed',

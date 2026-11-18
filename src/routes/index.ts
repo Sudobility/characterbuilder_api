@@ -8,6 +8,8 @@ import consumablesBalance, {
   consumablesPublic,
   consumablesWebhook,
 } from './consumables';
+import creditCoupons from './credit-coupons';
+import { entitiesRouter, invitationsRouter } from './entities';
 import resources from './resources';
 
 const routes = new Hono();
@@ -20,7 +22,10 @@ routes.use('/characters', requireAuth);
 routes.use('/characters/*', requireAuth);
 routes.use('/compose', requireAuth);
 routes.use('/distributions', requireAuth);
+routes.use('/describe', requireAuth);
+routes.use('/analyze', requireAuth);
 routes.use('/generate', requireAuth);
+routes.use('/generate/*', requireAuth);
 routes.use('/generations', requireAuth);
 routes.use('/generations/*', requireAuth);
 routes.use('/images/*', requireAuth);
@@ -29,6 +34,13 @@ routes.use('/consumables/dev-topup', requireAuth);
 routes.use('/consumables/purchases', requireAuth);
 routes.use('/consumables/usages', requireAuth);
 routes.use('/consumables/purchase', requireAuth);
+routes.use('/consumables/coupons', requireAuth);
+routes.use('/consumables/coupons/*', requireAuth);
+routes.use('/consumables/redeem-coupon', requireAuth);
+routes.use('/entities', requireAuth);
+routes.use('/entities/*', requireAuth);
+routes.use('/invitations', requireAuth);
+routes.use('/invitations/*', requireAuth);
 
 // Public: product catalog + RevenueCat webhook (no auth). The shared
 // ConsumablesApiClient fetches the catalog from `/api/v1/public/consumables/...`
@@ -40,6 +52,9 @@ routes.route('/consumables', consumablesWebhook);
 
 // Authenticated.
 routes.route('/consumables', consumablesBalance);
+routes.route('/consumables', creditCoupons);
+routes.route('/entities', entitiesRouter);
+routes.route('/invitations', invitationsRouter);
 routes.route('/me', me);
 routes.route('/characters', characters);
 // Public resources catalog (forwards to sudobility_api).

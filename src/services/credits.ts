@@ -2,6 +2,10 @@
  * Credits: the one place characterbuilder_api talks to
  * `@sudobility/consumables_service`. Called in-process (the screenwriter_api /
  * music_api pattern). One credit is charged per generated image.
+ *
+ * Credits are owned by an ENTITY, not a user (see services/entities.ts). The
+ * `entityId` these functions take is stored in the ledger's `user_id` column;
+ * the `set_consumable_entity_id` trigger backfills the parallel `entity_id`.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -21,6 +25,24 @@ export function initialFreeCredits(): number {
   return parseInt(getEnv('INITIAL_FREE_CREDITS', '20')!, 10);
 }
 
+/**
+ * Flat per-action credit costs for the lightweight AI endpoints (image/sheet
+ * generation is priced per delivered image elsewhere). Overridable via env; the
+ * defaults are small — these are cheap assists. Set a cost to 0 to leave an
+ * action free.
+ */
+export type MeteredAction = 'describe' | 'analyze' | 'distributions';
+const METERED_ACTION_ENV: Record<MeteredAction, string> = {
+  describe: 'CREDITS_DESCRIBE',
+  analyze: 'CREDITS_ANALYZE',
+  distributions: 'CREDITS_DISTRIBUTIONS',
+};
+export function creditCost(action: MeteredAction): number {
+  const raw = getEnv(METERED_ACTION_ENV[action], '1')!;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 1;
+}
+
 let helper: ConsumablesHelper | null = null;
 
 export function consumables(): ConsumablesHelper {
@@ -34,14 +56,23 @@ export function consumables(): ConsumablesHelper {
   return helper;
 }
 
-/** Current balance; grants the signup credits on first access. */
-export function getBalance(userId: string) {
-  return consumables().getBalance(userId);
+/** Current balance for an entity; grants the signup credits on first access. */
+export function getBalance(entityId: string) {
+  return consumables().getBalance(entityId);
+}
+
+/**
+ * Balance for an entity. CharacterBuilder only ever has personal entities (no
+ * team UI), so every entity gets the signup grant on first access — this is a
+ * named alias of `getBalance` mirroring music_api's `getEntityBalance`.
+ */
+export function getEntityBalance(entityId: string) {
+  return getBalance(entityId);
 }
 
 /** Debit `credits` for a generation; returns whether the deduction applied. */
-export function spend(userId: string, credits: number, reference: string) {
-  return consumables().recordUsage(userId, { credits, reference });
+export function spend(entityId: string, credits: number, reference: string) {
+  return consumables().recordUsage(entityId, { credits, reference });
 }
 
 /**
@@ -52,15 +83,15 @@ export function spend(userId: string, credits: number, reference: string) {
  * the caller should fail the job with 402. Writes a usage row for the audit trail.
  */
 export async function reserveCredits(
-  userId: string,
+  entityId: string,
   credits: number,
   reference: string
 ): Promise<{ success: boolean; balance: number }> {
   if (credits <= 0) {
-    return { success: true, balance: (await getBalance(userId)).balance };
+    return { success: true, balance: (await getBalance(entityId)).balance };
   }
   // Ensure the balance row exists and the signup credits are granted.
-  await getBalance(userId);
+  await getBalance(entityId);
   const rows = await getDb()
     .update(consumableBalances)
     .set({
@@ -68,15 +99,15 @@ export async function reserveCredits(
       updated_at: new Date(),
     })
     .where(
-      sql`${consumableBalances.user_id} = ${userId} AND ${consumableBalances.balance} >= ${credits}`
+      sql`${consumableBalances.user_id} = ${entityId} AND ${consumableBalances.balance} >= ${credits}`
     )
     .returning({ balance: consumableBalances.balance });
   if (rows.length === 0) {
-    return { success: false, balance: (await getBalance(userId)).balance };
+    return { success: false, balance: (await getBalance(entityId)).balance };
   }
   await getDb()
     .insert(consumableUsages)
-    .values({ user_id: userId, credits, reference });
+    .values({ user_id: entityId, credits, reference });
   return { success: true, balance: rows[0]!.balance };
 }
 
@@ -86,12 +117,12 @@ export async function reserveCredits(
  * not a purchase; `product_id` ties it to the generation for the audit trail.
  */
 export async function releaseCredits(
-  userId: string,
+  entityId: string,
   credits: number,
   reference: string
 ): Promise<void> {
   if (credits <= 0) return;
-  await consumables().recordPurchase(userId, {
+  await consumables().recordPurchase(entityId, {
     credits,
     source: 'free',
     product_id: reference,
@@ -102,13 +133,13 @@ export async function releaseCredits(
  * Dev-only grant: add `credits` to a user's balance (source `free`), for local
  * testing without a real purchase. The route gates this on AUTH_TEST_MODE.
  */
-export async function grantDevCredits(userId: string, credits: number) {
-  await consumables().recordPurchase(userId, {
+export async function grantDevCredits(entityId: string, credits: number) {
+  await consumables().recordPurchase(entityId, {
     credits,
     source: 'free',
     product_id: 'dev_topup',
   });
-  return getBalance(userId);
+  return getBalance(entityId);
 }
 
 /** The priced catalog: `CREDIT_PRODUCTS=cb_credits_100:100,cb_credits_500:500`. */

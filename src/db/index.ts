@@ -4,6 +4,7 @@
  */
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { runEntityMigration } from '@sudobility/entity_service';
 import * as schema from './schema';
 import { getEnv, getRequiredEnv } from '../lib/env-helper';
 
@@ -48,6 +49,39 @@ export async function initDatabase(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   await sql`CREATE INDEX IF NOT EXISTS users_email_lower_idx ON users (lower(email))`;
+  // Credits are keyed to an entity; the user's currently-selected one.
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS active_entity_id UUID`;
+
+  // Entity layer (@sudobility/entity_service). Creates entities, memberships
+  // and invitations (full music parity: personal + organization entities).
+  // migrateProjects:false because characterbuilder has no `projects` table for
+  // the migration to touch — its domain tables (characters/generations/images)
+  // are backfilled with entity_id in resolveEntity instead.
+  await runEntityMigration({
+    client: sql,
+    schemaName: 'public',
+    indexPrefix: 'characterbuilder',
+    migrateProjects: false,
+    migrateUsers: false,
+  });
+  // runEntityMigration does not own the API-key table; create it here (mirrors
+  // music_api) so every startup brings an existing DB up to the key schema.
+  await sql`
+    CREATE TABLE IF NOT EXISTS entity_api_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+      key_name VARCHAR(255) NOT NULL,
+      key_hash VARCHAR(64) NOT NULL UNIQUE,
+      key_prefix VARCHAR(20) NOT NULL,
+      created_by_user_id VARCHAR(128) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      last_used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS characterbuilder_entity_api_keys_hash_idx ON entity_api_keys (key_hash)`;
+  await sql`CREATE INDEX IF NOT EXISTS characterbuilder_entity_api_keys_entity_idx ON entity_api_keys (entity_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS characterbuilder_entity_api_keys_active_idx ON entity_api_keys (is_active)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS characters (
@@ -163,4 +197,64 @@ export async function initDatabase(): Promise<void> {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS consumable_purchases_transaction_ref
       ON consumable_purchases (transaction_ref_id) WHERE transaction_ref_id IS NOT NULL`;
   await sql`CREATE INDEX IF NOT EXISTS consumable_usages_user ON consumable_usages (user_id, created_at DESC)`;
+
+  // Entity-scoping of the ledger (mirrors music_api). `user_id` holds an entity
+  // id; the nullable `entity_id` is backfilled from it by a trigger when the id
+  // is a UUID. `entity_credit_migrations` records which users have had their
+  // old uid-keyed credit rows folded into their personal entity.
+  await sql`ALTER TABLE consumable_balances ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(id) ON DELETE CASCADE`;
+  await sql`ALTER TABLE consumable_purchases ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(id) ON DELETE CASCADE`;
+  await sql`ALTER TABLE consumable_usages ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(id) ON DELETE CASCADE`;
+  await sql`CREATE INDEX IF NOT EXISTS consumable_purchases_entity ON consumable_purchases (entity_id, created_at DESC)`;
+  await sql`CREATE INDEX IF NOT EXISTS consumable_usages_entity ON consumable_usages (entity_id, created_at DESC)`;
+  await sql`CREATE TABLE IF NOT EXISTS entity_credit_migrations (user_id VARCHAR(128) PRIMARY KEY, entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE, migrated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`
+    CREATE OR REPLACE FUNCTION set_consumable_entity_id() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.entity_id IS NULL AND NEW.user_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+        NEW.entity_id := NEW.user_id::uuid;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `;
+  await sql`DROP TRIGGER IF EXISTS consumable_balances_entity_id ON consumable_balances`;
+  await sql`CREATE TRIGGER consumable_balances_entity_id BEFORE INSERT OR UPDATE ON consumable_balances FOR EACH ROW EXECUTE FUNCTION set_consumable_entity_id()`;
+  await sql`DROP TRIGGER IF EXISTS consumable_purchases_entity_id ON consumable_purchases`;
+  await sql`CREATE TRIGGER consumable_purchases_entity_id BEFORE INSERT OR UPDATE ON consumable_purchases FOR EACH ROW EXECUTE FUNCTION set_consumable_entity_id()`;
+  await sql`DROP TRIGGER IF EXISTS consumable_usages_entity_id ON consumable_usages`;
+  await sql`CREATE TRIGGER consumable_usages_entity_id BEFORE INSERT OR UPDATE ON consumable_usages FOR EACH ROW EXECUTE FUNCTION set_consumable_entity_id()`;
+
+  // Credit coupons (site-admin issued, redeemed to an entity). Raw-SQL, as in
+  // music_api — not part of the consumables_service schema.
+  await sql`
+    CREATE TABLE IF NOT EXISTS credit_coupons (
+      code CHAR(8) PRIMARY KEY,
+      credits INTEGER NOT NULL CHECK (credits > 0),
+      expires_at TIMESTAMPTZ NOT NULL,
+      assigned_email VARCHAR(255),
+      created_by_user_id VARCHAR(128) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
+  await sql`CREATE INDEX IF NOT EXISTS credit_coupons_created_idx ON credit_coupons (created_at DESC)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS credit_coupon_redemptions (
+      code CHAR(8) NOT NULL REFERENCES credit_coupons(code) ON DELETE RESTRICT,
+      entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+      redeemed_by_user_id VARCHAR(128) NOT NULL,
+      credits INTEGER NOT NULL CHECK (credits > 0),
+      redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (code, entity_id)
+    )`;
+  await sql`CREATE INDEX IF NOT EXISTS credit_coupon_redemptions_entity_idx ON credit_coupon_redemptions (entity_id, redeemed_at DESC)`;
+
+  // Entity-owned domain data (forward-only): characters, generations and their
+  // images carry the owning entity. Existing rows are backfilled to each user's
+  // personal entity by resolveEntity on first request (see services/entities.ts).
+  await sql`ALTER TABLE characters ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(id) ON DELETE CASCADE`;
+  await sql`ALTER TABLE generations ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(id) ON DELETE CASCADE`;
+  await sql`ALTER TABLE generation_images ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(id) ON DELETE CASCADE`;
+  await sql`CREATE INDEX IF NOT EXISTS characters_entity_idx ON characters (entity_id, updated_at DESC)`;
+  await sql`CREATE INDEX IF NOT EXISTS generations_entity_idx ON generations (entity_id, created_at DESC)`;
+  await sql`CREATE INDEX IF NOT EXISTS generation_images_entity_idx ON generation_images (entity_id)`;
 }

@@ -45,40 +45,8 @@ describe('characterbuilder_api app', () => {
     expect(r.body?.error).toBe('Authentication required');
   });
 
-  it('validates /generate before touching the database (dev auth)', async () => {
-    process.env.AUTH_TEST_MODE = '1';
-    const r = await call(
-      new Request('http://t/api/v1/generate', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer dev:u1:a@b.co',
-        },
-        // Schema-invalid (count is 1..10) — rejected by the validator before any
-        // DB access. (characterId + spec together is now valid: it associates.)
-        body: JSON.stringify({ params: { count: 99 } }),
-      })
-    );
-    expect(r.status).toBe(400);
-    expect(r.body?.success).toBe(false);
-    expect(r.body?.error).toBe('Invalid request');
-  });
-
-  it('returns trait distributions for demographics without a database', async () => {
-    process.env.AUTH_TEST_MODE = '1';
-    const r = await call(
-      new Request('http://t/api/v1/distributions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer dev:u1:a@b.co',
-        },
-        body: JSON.stringify({ ancestry: 'east-asian', sex: 'female' }),
-      })
-    );
-    expect(r.status).toBe(200);
-    const data = (r.body as { data?: { distributions?: Record<string, unknown> } })
-      .data;
-    expect(data?.distributions?.hairTexture).toBeTruthy();
-  });
+  // Authenticated endpoints (/generate, /distributions, …) now resolve the
+  // request's entity in auth middleware, so they need a database. Their coverage
+  // lives in app.db.test.ts (run against a local DB), never in this DB-free
+  // suite — which must stay off the remote DB that .env points at.
 });

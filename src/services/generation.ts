@@ -20,40 +20,69 @@ import { HttpError } from '../lib/errors';
 import { getStorage, imageUrl } from './storage';
 import { getCharacter } from './characters';
 import { enqueueGeneration, enqueueSheet } from './jobs';
+import { creditCost, releaseCredits, reserveCredits } from './credits';
 import { describeToSpecRemote, analyzeImageRemote } from './shapeshyft';
+
+/**
+ * Run a flat-cost AI action: reserve its credits atomically (402 if short),
+ * run `fn`, and refund if it throws. Charges on success only. Used by the
+ * lightweight synchronous AI endpoints (describe/analyze).
+ */
+async function withCreditCharge<T>(
+  entityId: string,
+  action: Parameters<typeof creditCost>[0],
+  fn: () => Promise<T>
+): Promise<T> {
+  const cost = creditCost(action);
+  const ref = `${action}:${crypto.randomUUID()}`;
+  const reserved = await reserveCredits(entityId, cost, ref);
+  if (!reserved.success) {
+    throw new HttpError(402, 'Not enough credits', {
+      required: cost,
+      balance: reserved.balance,
+    });
+  }
+  try {
+    return await fn();
+  } catch (err) {
+    await releaseCredits(entityId, cost, ref);
+    throw err;
+  }
+}
 
 /** Resolve the FaceSpec from either a saved character or the inline spec. */
 async function resolveSpec(
-  userId: string,
+  entityId: string,
   req: { characterId?: string; spec?: FaceSpec }
 ): Promise<{ spec: FaceSpec; characterId: string | null }> {
   if (req.characterId) {
-    const character = await getCharacter(userId, req.characterId);
+    const character = await getCharacter(entityId, req.characterId);
     return { spec: character.spec, characterId: character.id };
   }
   return { spec: req.spec ?? {}, characterId: null };
 }
 
 export async function compose(
-  userId: string,
+  entityId: string,
   req: ComposeRequest
 ): Promise<string> {
-  const { spec } = await resolveSpec(userId, req);
+  const { spec } = await resolveSpec(entityId, req);
   const params = generationParamsSchema.partial().parse(req.params ?? {});
   return composePrompt(spec, params);
 }
 
 /**
- * Describe-to-spec: map a free-text description onto the structured FaceSpec via the
- * `character-describe` LLM endpoint. Pure inference — no DB write, no credits spent;
- * the caller merges the returned partial spec into their draft. (The `userId` is
- * accepted for parity with the other services and future per-user rate limiting.)
+ * Describe-to-spec: map a free-text description onto the structured FaceSpec via
+ * the `character-describe` LLM endpoint. Charges a flat credit cost
+ * (`CREDITS_DESCRIBE`) against the entity, refunded if the model call fails.
  */
 export async function describe(
-  _userId: string,
+  entityId: string,
   req: DescribeRequest
 ): Promise<DescribeResponse> {
-  const spec = await describeToSpecRemote(req.description, req.demographics);
+  const spec = await withCreditCharge(entityId, 'describe', () =>
+    describeToSpecRemote(req.description, req.demographics)
+  );
   // Keep the inferred spec consistent with the caster: a female never carries
   // facial hair (the describe LLM can misfire on an ambiguous description).
   return { spec: applyFemaleFacialHairRule(spec) };
@@ -61,14 +90,16 @@ export async function describe(
 
 /**
  * Analyze-to-spec (vision): read an uploaded headshot into a partial FaceSpec via
- * the `character-analyze` endpoint. No DB write, no credits. The image is transient
- * (used only for this call); only the inferred spec is returned to the client.
+ * the `character-analyze` endpoint. Charges a flat credit cost (`CREDITS_ANALYZE`)
+ * against the entity, refunded if the model call fails. The image is transient.
  */
 export async function analyze(
-  _userId: string,
+  entityId: string,
   req: AnalyzeRequest
 ): Promise<AnalyzeResponse> {
-  const spec = await analyzeImageRemote(req.image, req.demographics);
+  const spec = await withCreditCharge(entityId, 'analyze', () =>
+    analyzeImageRemote(req.image, req.demographics)
+  );
   return { spec: applyFemaleFacialHairRule(spec) };
 }
 
@@ -96,6 +127,7 @@ export function toGeneratedImage(
  * per image, renders, stores, and settles. Clients poll GET /generations/:id.
  */
 export async function generate(
+  entityId: string,
   userId: string,
   req: GenerateRequest
 ): Promise<Generation> {
@@ -110,16 +142,16 @@ export async function generate(
           eq(generations.idempotencyKey, req.idempotencyKey)
         )
       );
-    if (existing) return await loadGeneration(userId, existing.id);
+    if (existing) return await loadGeneration(entityId, existing.id);
   }
 
-  const id = await enqueueGeneration(userId, req);
-  return await loadGeneration(userId, id);
+  const id = await enqueueGeneration(entityId, userId, req);
+  return await loadGeneration(entityId, id);
 }
 
-/** Resolve a stored image the user owns into a `data:` reference string. */
-async function referenceFromImage(userId: string, imageId: string): Promise<string> {
-  const { bytes, mimeType } = await getImageBytes(userId, imageId);
+/** Resolve a stored image the entity owns into a `data:` reference string. */
+async function referenceFromImage(entityId: string, imageId: string): Promise<string> {
+  const { bytes, mimeType } = await getImageBytes(entityId, imageId);
   const b64 = Buffer.from(bytes).toString('base64');
   return `data:${mimeType};base64,${b64}`;
 }
@@ -132,6 +164,7 @@ async function referenceFromImage(userId: string, imageId: string): Promise<stri
  * sheet in one call (split by the runner).
  */
 export async function createSheet(
+  entityId: string,
   userId: string,
   req: SheetRequest
 ): Promise<Generation> {
@@ -145,12 +178,12 @@ export async function createSheet(
           eq(generations.idempotencyKey, req.idempotencyKey)
         )
       );
-    if (existing) return await loadGeneration(userId, existing.id);
+    if (existing) return await loadGeneration(entityId, existing.id);
   }
 
   // Validate the owning character (if any) before spending credits — throws
   // CHARACTER_NOT_FOUND for a missing or someone else's character.
-  if (req.characterId) await getCharacter(userId, req.characterId);
+  if (req.characterId) await getCharacter(entityId, req.characterId);
 
   let referenceImage: string;
 
@@ -161,46 +194,46 @@ export async function createSheet(
     if (req.referenceImage) {
       referenceImage = req.referenceImage;
     } else if (req.sourceImageId) {
-      referenceImage = await referenceFromImage(userId, req.sourceImageId);
+      referenceImage = await referenceFromImage(entityId, req.sourceImageId);
     } else {
       throw new HttpError(400, 'A head sheet needs a sourceImageId or an uploaded referenceImage');
     }
-    const id = await enqueueSheet(userId, req, {
+    const id = await enqueueSheet(entityId, userId, req, {
       kind: 'head-sheet',
       referenceImage,
       traits: req.traits,
     });
-    return await loadGeneration(userId, id);
+    return await loadGeneration(entityId, id);
   }
 
   if (req.kind === 'body-sheet') {
-    referenceImage = await referenceFromImage(userId, req.sourceImageId);
-    const id = await enqueueSheet(userId, req, {
+    referenceImage = await referenceFromImage(entityId, req.sourceImageId);
+    const id = await enqueueSheet(entityId, userId, req, {
       kind: 'body-sheet',
       referenceImage,
       body: req.body,
     });
-    return await loadGeneration(userId, id);
+    return await loadGeneration(entityId, id);
   }
 
   // clothed-sheet
-  referenceImage = await referenceFromImage(userId, req.sourceImageId);
-  const clothedId = await enqueueSheet(userId, req, {
+  referenceImage = await referenceFromImage(entityId, req.sourceImageId);
+  const clothedId = await enqueueSheet(entityId, userId, req, {
     kind: 'clothed-sheet',
     referenceImage,
     wardrobe: req.wardrobe,
   });
-  return await loadGeneration(userId, clothedId);
+  return await loadGeneration(entityId, clothedId);
 }
 
 export async function loadGeneration(
-  userId: string,
+  entityId: string,
   id: string
 ): Promise<Generation> {
   const [gen] = await getDb()
     .select()
     .from(generations)
-    .where(and(eq(generations.id, id), eq(generations.userId, userId)));
+    .where(and(eq(generations.id, id), eq(generations.entityId, entityId)));
   if (!gen) throw new HttpError(404, 'Generation not found');
   const imgs = await getDb()
     .select()
@@ -222,7 +255,7 @@ export async function loadGeneration(
 }
 
 export async function listGenerations(
-  userId: string,
+  entityId: string,
   limit: number,
   cursor?: string
 ): Promise<PaginatedResponse<Generation>> {
@@ -230,8 +263,8 @@ export async function listGenerations(
     ? Buffer.from(cursor, 'base64url').toString('utf8')
     : null;
   const where = after
-    ? and(eq(generations.userId, userId), lt(generations.id, after))
-    : eq(generations.userId, userId);
+    ? and(eq(generations.entityId, entityId), lt(generations.id, after))
+    : eq(generations.entityId, entityId);
   const rows = await getDb()
     .select()
     .from(generations)
@@ -244,7 +277,7 @@ export async function listGenerations(
       ? Buffer.from(page[page.length - 1]!.id).toString('base64url')
       : null;
   const items = await Promise.all(
-    page.map((r) => loadGeneration(userId, r.id))
+    page.map((r) => loadGeneration(entityId, r.id))
   );
   return {
     success: true,
@@ -254,31 +287,31 @@ export async function listGenerations(
   };
 }
 
-/** Metadata (spec, owning character, role) for a single image the user owns. */
+/** Metadata (spec, owning character, role) for a single image the entity owns. */
 export async function getImage(
-  userId: string,
+  entityId: string,
   imageId: string
 ): Promise<GeneratedImage> {
   const [row] = await getDb()
     .select()
     .from(generationImages)
     .where(
-      and(eq(generationImages.id, imageId), eq(generationImages.userId, userId))
+      and(eq(generationImages.id, imageId), eq(generationImages.entityId, entityId))
     );
   if (!row) throw new HttpError(404, 'Image not found');
   return toGeneratedImage(row);
 }
 
-/** Serve raw bytes for an image id the user owns. */
+/** Serve raw bytes for an image id the entity owns. */
 export async function getImageBytes(
-  userId: string,
+  entityId: string,
   imageId: string
 ): Promise<{ bytes: Uint8Array; mimeType: string }> {
   const [row] = await getDb()
     .select()
     .from(generationImages)
     .where(
-      and(eq(generationImages.id, imageId), eq(generationImages.userId, userId))
+      and(eq(generationImages.id, imageId), eq(generationImages.entityId, entityId))
     );
   if (!row) throw new HttpError(404, 'Image not found');
   const bytes = await getStorage().get(row.storageKey);

@@ -23,12 +23,13 @@ import {
 } from '../services/generation';
 import { getDistributions } from '../services/distribution';
 import { ensureUser } from '../services/users';
+import { getEntityId } from '../middleware/auth';
 import { validate } from './util';
 
 const router = new Hono();
 
 router.post('/compose', validate('json', composeRequestSchema), async (c) => {
-  const prompt = await compose(c.get('userId'), c.req.valid('json'));
+  const prompt = await compose(getEntityId(c), c.req.valid('json'));
   return c.json(successResponse<ComposeResponse>({ prompt }));
 });
 
@@ -37,25 +38,33 @@ router.post('/compose', validate('json', composeRequestSchema), async (c) => {
 router.post(
   '/distributions',
   validate('json', distributionRequestSchema),
-  async (c) => c.json(successResponse(await getDistributions(c.req.valid('json'))))
+  async (c) =>
+    c.json(
+      successResponse(await getDistributions(getEntityId(c), c.req.valid('json')))
+    )
 );
 
-// Free-text description -> inferred (partial) FaceSpec. Pure LLM inference, no DB
-// write and no credits spent; the client merges the result into its draft.
+// Free-text description -> inferred (partial) FaceSpec via an LLM. Charges a
+// flat credit cost (CREDITS_DESCRIBE), refunded if the model call fails.
 router.post('/describe', validate('json', describeRequestSchema), async (c) =>
-  c.json(successResponse(await describe(c.get('userId'), c.req.valid('json'))))
+  c.json(successResponse(await describe(await getEntityId(c), c.req.valid('json'))))
 );
 
-// Uploaded headshot -> read (partial) FaceSpec via a vision model. No DB, no credits.
+// Uploaded headshot -> read (partial) FaceSpec via a vision model. Charges a
+// flat credit cost (CREDITS_ANALYZE), refunded if the model call fails.
 router.post('/analyze', validate('json', analyzeRequestSchema), async (c) =>
-  c.json(successResponse(await analyze(c.get('userId'), c.req.valid('json'))))
+  c.json(successResponse(await analyze(await getEntityId(c), c.req.valid('json'))))
 );
 
 router.post('/generate', validate('json', generateRequestSchema), async (c) => {
   // Persisting a generation FKs to users(id); ensure the row exists for a
   // signed-in user who generates before ever calling GET /me.
   await ensureUser(c.get('principal'));
-  return c.json(successResponse(await generate(c.get('userId'), c.req.valid('json'))));
+  return c.json(
+    successResponse(
+      await generate(await getEntityId(c), c.get('userId'), c.req.valid('json'))
+    )
+  );
 });
 
 // Staged sheet generation (head / body / clothed). Must be registered before
@@ -63,29 +72,33 @@ router.post('/generate', validate('json', generateRequestSchema), async (c) => {
 // is not load-bearing, but keep it next to /generate for clarity.
 router.post('/generate/sheet', validate('json', sheetRequestSchema), async (c) => {
   await ensureUser(c.get('principal'));
-  return c.json(successResponse(await createSheet(c.get('userId'), c.req.valid('json'))));
+  return c.json(
+    successResponse(
+      await createSheet(await getEntityId(c), c.get('userId'), c.req.valid('json'))
+    )
+  );
 });
 
 router.get('/generations', validate('query', cursorQuerySchema), async (c) => {
   const { limit, cursor } = c.req.valid('query');
-  return c.json(await listGenerations(c.get('userId'), limit, cursor));
+  return c.json(await listGenerations(getEntityId(c), limit, cursor));
 });
 
 router.get('/generations/:id', async (c) =>
   c.json(
-    successResponse(await loadGeneration(c.get('userId'), c.req.param('id')))
+    successResponse(await loadGeneration(getEntityId(c), c.req.param('id')))
   )
 );
 
 // Metadata for one image (spec, owning character, role) — lets a client resolve
 // any image by id without paging the full generation history.
 router.get('/images/:id/meta', async (c) =>
-  c.json(successResponse(await getImage(c.get('userId'), c.req.param('id'))))
+  c.json(successResponse(await getImage(getEntityId(c), c.req.param('id'))))
 );
 
 router.get('/images/:id', async (c) => {
   const { bytes, mimeType } = await getImageBytes(
-    c.get('userId'),
+    getEntityId(c),
     c.req.param('id')
   );
   return new Response(bytes, {

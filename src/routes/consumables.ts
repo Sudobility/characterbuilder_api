@@ -8,6 +8,8 @@ import {
   grantDevCredits,
 } from '../services/credits';
 import { findRevenueCatPurchase } from '../services/revenuecat';
+import { resolveEntity } from '../services/entities';
+import { getEntityId } from '../middleware/auth';
 import { getEnv } from '../lib/env-helper';
 import { log } from '../lib/log';
 
@@ -21,10 +23,10 @@ function pageParams(c: Context): { limit: number; offset: number } {
   return { limit, offset };
 }
 
-/** Authenticated: the signed-in user's balance. */
+/** Authenticated: the active entity's balance. */
 const router = new Hono();
 router.get('/balance', async (c) =>
-  c.json(successResponse(await getBalance(c.get('userId'))))
+  c.json(successResponse(await getBalance(await getEntityId(c))))
 );
 
 /** Paginated purchase (top-up) history, most recent first. */
@@ -32,7 +34,7 @@ router.get('/purchases', async (c) => {
   const { limit, offset } = pageParams(c);
   return c.json(
     successResponse(
-      await consumables().getPurchaseHistory(c.get('userId'), limit, offset)
+      await consumables().getPurchaseHistory(await getEntityId(c), limit, offset)
     )
   );
 });
@@ -42,7 +44,7 @@ router.get('/usages', async (c) => {
   const { limit, offset } = pageParams(c);
   return c.json(
     successResponse(
-      await consumables().getUsageHistory(c.get('userId'), limit, offset)
+      await consumables().getUsageHistory(await getEntityId(c), limit, offset)
     )
   );
 });
@@ -95,8 +97,11 @@ router.post('/purchase', async (c) => {
     : store.includes('play_store')
       ? 'google'
       : 'web';
+  // Verified against RevenueCat for the signed-in user, but credited to the
+  // active entity.
+  const entityId = await getEntityId(c);
   await consumables().recordPurchaseFromWebhook(
-    c.get('userId'),
+    entityId,
     body.transaction_ref_id,
     credits,
     source,
@@ -104,7 +109,7 @@ router.post('/purchase', async (c) => {
     Math.round(body.price_cents ?? 0),
     body.currency ?? 'USD'
   );
-  return c.json(successResponse(await getBalance(c.get('userId'))));
+  return c.json(successResponse(await getBalance(entityId)));
 });
 
 /**
@@ -119,7 +124,9 @@ router.post('/dev-topup', async (c) => {
   }
   const body = (await c.req.json().catch(() => ({}))) as { credits?: number };
   const credits = Math.min(Math.max(Math.round(body.credits ?? 100), 1), 1000);
-  return c.json(successResponse(await grantDevCredits(c.get('userId'), credits)));
+  return c.json(
+    successResponse(await grantDevCredits(await getEntityId(c), credits))
+  );
 });
 export default router;
 
@@ -173,8 +180,11 @@ consumablesWebhook.post('/webhook', async (c) => {
     : store.includes('play_store')
       ? 'google'
       : 'web';
+  // The webhook isn't behind requireAuth, so resolve the purchaser's entity
+  // from their app user id before crediting (mirrors music_api).
+  const entity = await resolveEntity(e.app_user_id, null);
   const result = await consumables().recordPurchaseFromWebhook(
-    e.app_user_id,
+    entity.id,
     e.transaction_id,
     credits,
     source,

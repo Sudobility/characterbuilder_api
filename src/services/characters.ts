@@ -42,7 +42,7 @@ function decodeCursor(cursor: string): { ms: number; id: string } | null {
 }
 
 export async function listCharacters(
-  userId: string,
+  entityId: string,
   limit: number,
   cursor?: string
 ): Promise<PaginatedResponse<Character>> {
@@ -50,7 +50,7 @@ export async function listCharacters(
   const after = cursor ? decodeCursor(cursor) : null;
   const where = after
     ? and(
-        eq(characters.userId, userId),
+        eq(characters.entityId, entityId),
         or(
           lt(characters.updatedAt, new Date(after.ms)),
           and(
@@ -59,7 +59,7 @@ export async function listCharacters(
           )
         )
       )
-    : eq(characters.userId, userId);
+    : eq(characters.entityId, entityId);
   const rows = await db
     .select()
     .from(characters)
@@ -77,18 +77,19 @@ export async function listCharacters(
 }
 
 export async function getCharacter(
-  userId: string,
+  entityId: string,
   id: string
 ): Promise<Character> {
   const [row] = await getDb()
     .select()
     .from(characters)
-    .where(and(eq(characters.id, id), eq(characters.userId, userId)));
+    .where(and(eq(characters.id, id), eq(characters.entityId, entityId)));
   if (!row) throw new HttpError(404, 'Character not found');
   return toCharacter(row);
 }
 
 export async function createCharacter(
+  entityId: string,
   userId: string,
   req: CreateCharacterRequest
 ): Promise<Character> {
@@ -99,6 +100,7 @@ export async function createCharacter(
     .values({
       id,
       userId,
+      entityId,
       name: req.name,
       role: req.role ?? null,
       notes: req.notes ?? null,
@@ -107,7 +109,7 @@ export async function createCharacter(
     })
     .returning();
   // Adopt the named image as the character's first headshot (1:M). Scoped to the
-  // user and to that ONE image, so naming a different image from the same run
+  // entity and to that ONE image, so naming a different image from the same run
   // creates a SEPARATE character (the link is per-image, not per-generation).
   if (req.previewImageId) {
     await db
@@ -116,7 +118,7 @@ export async function createCharacter(
       .where(
         and(
           eq(generationImages.id, req.previewImageId),
-          eq(generationImages.userId, userId)
+          eq(generationImages.entityId, entityId)
         )
       );
   }
@@ -125,17 +127,17 @@ export async function createCharacter(
 
 /** Every headshot owned by a character (1:M), newest first. */
 export async function listCharacterImages(
-  userId: string,
+  entityId: string,
   id: string
 ): Promise<GeneratedImage[]> {
-  await getCharacter(userId, id); // 404 if not owned
+  await getCharacter(entityId, id); // 404 if not owned
   const rows = await getDb()
     .select()
     .from(generationImages)
     .where(
       and(
         eq(generationImages.characterId, id),
-        eq(generationImages.userId, userId)
+        eq(generationImages.entityId, entityId)
       )
     )
     .orderBy(desc(generationImages.createdAt), desc(generationImages.id));
@@ -149,11 +151,11 @@ export async function listCharacterImages(
  * the preview is repointed to the newest remaining headshot (or cleared).
  */
 export async function removeCharacterImage(
-  userId: string,
+  entityId: string,
   characterId: string,
   imageId: string
 ): Promise<Character> {
-  const character = await getCharacter(userId, characterId); // 404 if not owned
+  const character = await getCharacter(entityId, characterId); // 404 if not owned
   const db = getDb();
   await db
     .update(generationImages)
@@ -161,7 +163,7 @@ export async function removeCharacterImage(
     .where(
       and(
         eq(generationImages.id, imageId),
-        eq(generationImages.userId, userId),
+        eq(generationImages.entityId, entityId),
         eq(generationImages.characterId, characterId)
       )
     );
@@ -172,7 +174,7 @@ export async function removeCharacterImage(
       .where(
         and(
           eq(generationImages.characterId, characterId),
-          eq(generationImages.userId, userId)
+          eq(generationImages.entityId, entityId)
         )
       )
       .orderBy(desc(generationImages.createdAt), desc(generationImages.id))
@@ -180,7 +182,7 @@ export async function removeCharacterImage(
     const [row] = await db
       .update(characters)
       .set({ previewImageId: next?.id ?? null, updatedAt: new Date() })
-      .where(and(eq(characters.id, characterId), eq(characters.userId, userId)))
+      .where(and(eq(characters.id, characterId), eq(characters.entityId, entityId)))
       .returning();
     return toCharacter(row!);
   }
@@ -189,18 +191,18 @@ export async function removeCharacterImage(
 
 /** Edit only while the image belongs to this user's character. */
 export async function updateCharacterImageNote(
-  userId: string,
+  entityId: string,
   characterId: string,
   imageId: string,
   note: string | null
 ): Promise<GeneratedImage> {
-  await getCharacter(userId, characterId);
+  await getCharacter(entityId, characterId);
   const [row] = await getDb()
     .update(generationImages)
     .set({ note })
     .where(and(
       eq(generationImages.id, imageId),
-      eq(generationImages.userId, userId),
+      eq(generationImages.entityId, entityId),
       eq(generationImages.characterId, characterId)
     ))
     .returning();
@@ -209,11 +211,11 @@ export async function updateCharacterImageNote(
 }
 
 export async function updateCharacter(
-  userId: string,
+  entityId: string,
   id: string,
   req: UpdateCharacterRequest
 ): Promise<Character> {
-  await getCharacter(userId, id); // 404 if not owned
+  await getCharacter(entityId, id); // 404 if not owned
   const patch: Partial<Row> = { updatedAt: new Date() };
   if (req.name !== undefined) patch.name = req.name;
   if (req.role !== undefined) patch.role = req.role;
@@ -223,15 +225,15 @@ export async function updateCharacter(
   const [row] = await getDb()
     .update(characters)
     .set(patch)
-    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.entityId, entityId)))
     .returning();
   return toCharacter(row!);
 }
 
-export async function deleteCharacter(userId: string, id: string): Promise<void> {
+export async function deleteCharacter(entityId: string, id: string): Promise<void> {
   const result = await getDb()
     .delete(characters)
-    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.entityId, entityId)))
     .returning({ id: characters.id });
   if (result.length === 0)
     throw new HttpError(404, 'Character not found');

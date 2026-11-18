@@ -1,6 +1,6 @@
 {
   "name": "characterbuilder_api",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "CharacterBuilder backend REST API: FaceSpec CRUD, prompt composition, image generation via shapeshyft, credits",
   "module": "src/index.ts",
   "type": "module",
@@ -12,6 +12,7 @@
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
     "db:init": "bun run src/db/init-cli.ts"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "@sudobility/auth_service": "^1.1.36",
     "@sudobility/characterbuilder_types": "^0.1.17",
     "@sudobility/consumables_service": "^0.1.23",
+    "@sudobility/entity_service": "^1.0.56",
     "@sudobility/resources_service": "^0.1.5",
     "@sudobility/types": "^1.11.2",
     "drizzle-orm": "~0.45.4",

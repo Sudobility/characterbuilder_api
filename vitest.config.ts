@@ -15,10 +15,23 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts'],
+    // Database-backed suites (*.db.test.ts) are never collected by the default
+    // run — this is what keeps CI (and local `bun test`) off a database, and
+    // in particular off the remote DB that `.env` DATABASE_URL points at. Run
+    // them explicitly against a local DB with `vitest **/*.db.test.ts`.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.db.test.ts'],
     environment: 'node',
     testTimeout: 15000,
-    // consumables_service's published dist uses a directory import ('./schema')
-    // that Node ESM rejects but Bun/Vite resolve — inline it so Vite transforms it.
-    server: { deps: { inline: [/@sudobility\/consumables_service/] } },
+    // consumables_service + entity_service published dist use directory imports
+    // ('./schema') that Node ESM rejects but Bun/Vite resolve — inline them so
+    // Vite transforms them.
+    server: {
+      deps: {
+        inline: [
+          /@sudobility\/consumables_service/,
+          /@sudobility\/entity_service/,
+        ],
+      },
+    },
   },
 });
